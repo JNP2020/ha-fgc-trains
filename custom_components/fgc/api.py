@@ -49,6 +49,9 @@ class FgcApiClient:
     async def _get_all_pages(
         self, dataset: str, params: dict[str, Any]
     ) -> list[dict[str, Any]]:
+        # Note: `total_count` is unreliable for `group_by` queries (it reflects
+        # only the current page, not the true total), so pagination must stop
+        # based on a short/empty page rather than comparing against it.
         results: list[dict[str, Any]] = []
         offset = 0
         while True:
@@ -58,7 +61,7 @@ class FgcApiClient:
             rows = page.get("results", [])
             results.extend(rows)
             offset += len(rows)
-            if not rows or offset >= page.get("total_count", 0):
+            if len(rows) < API_PAGE_SIZE:
                 break
         return results
 
@@ -95,7 +98,7 @@ class FgcApiClient:
                 "where": where,
                 "order_by": "departure_time asc",
                 "select": (
-                    "departure_time, route_short_name, trip_headsign, "
+                    "stop_id, departure_time, route_short_name, trip_headsign, "
                     "platform_code, stop_name"
                 ),
             },

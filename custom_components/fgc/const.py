@@ -17,6 +17,7 @@ SCAN_INTERVAL = timedelta(seconds=30)
 
 ATTR_LINE = "line"
 ATTR_DESTINATION = "destination"
+ATTR_DIRECTION = "direction"
 ATTR_PLATFORM = "platform"
 ATTR_STATION_NAME = "station_name"
 ATTR_NEXT_DEPARTURE = "next_departure"

@@ -38,7 +38,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "station_names": station_names,
     }
 
-    _remove_stale_entities(hass, entry, station_codes)
+    _remove_stale_entities(hass, entry, coordinator)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -46,11 +46,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 def _remove_stale_entities(
-    hass: HomeAssistant, entry: ConfigEntry, station_codes: list[str]
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: FgcCoordinator
 ) -> None:
-    """Drop entities for stations that were removed via the options flow."""
+    """Drop entities for platforms/stations no longer configured.
+
+    Each entity's unique_id is keyed by platform `stop_id`, discovered via
+    `coordinator.platform_labels` (populated by the first refresh above).
+    """
     registry = er.async_get(hass)
-    wanted_unique_ids = {f"{entry.entry_id}_{code}" for code in station_codes}
+    wanted_stop_ids = {
+        stop_id
+        for labels in coordinator.platform_labels.values()
+        for stop_id in labels
+    }
+    wanted_unique_ids = {f"{entry.entry_id}_{stop_id}" for stop_id in wanted_stop_ids}
     for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if entity_entry.unique_id not in wanted_unique_ids:
             registry.async_remove(entity_entry.entity_id)

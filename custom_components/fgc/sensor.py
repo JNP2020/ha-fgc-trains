@@ -18,6 +18,7 @@ except ImportError:  # pragma: no cover
 
 from .const import (
     ATTR_DESTINATION,
+    ATTR_DIRECTION,
     ATTR_LINE,
     ATTR_NEXT_DEPARTURE,
     ATTR_PLATFORM,
@@ -32,19 +33,38 @@ from .coordinator import FgcCoordinator
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up FGC sensors for the stations configured on this entry."""
+    """Set up one sensor per platform/direction for each configured station.
+
+    An intermediate station has a separate platform (and thus a separate
+    sensor) per direction; a single-platform terminus just gets one sensor.
+    The coordinator has already done its first refresh by the time this
+    runs, so `platform_labels` is populated for every configured station.
+    """
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: FgcCoordinator = data["coordinator"]
     station_names: dict[str, str] = data["station_names"]
 
-    async_add_entities(
-        FgcDepartureSensor(coordinator, entry, code, station_names.get(code, code))
-        for code in entry.options.get(CONF_STATIONS, [])
-    )
+    entities = []
+    for code in entry.options.get(CONF_STATIONS, []):
+        station_name = station_names.get(code, code)
+        labels = coordinator.platform_labels.get(code, {})
+        multi_platform = len(labels) > 1
+        for stop_id, direction_label in labels.items():
+            entities.append(
+                FgcDepartureSensor(
+                    coordinator,
+                    entry,
+                    code,
+                    stop_id,
+                    station_name,
+                    direction_label if multi_platform else None,
+                )
+            )
+    async_add_entities(entities)
 
 
 class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
-    """Minutes remaining until the next train departure from a station."""
+    """Minutes remaining until the next train departure from one platform."""
 
     _attr_icon = "mdi:train"
     _attr_native_unit_of_measurement = _MINUTES
@@ -54,13 +74,21 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
         coordinator: FgcCoordinator,
         entry: ConfigEntry,
         station_code: str,
+        stop_id: str,
         station_name: str,
+        direction_label: str | None,
     ) -> None:
         super().__init__(coordinator)
         self._station_code = station_code
+        self._stop_id = stop_id
         self._station_name = station_name
-        self._attr_name = f"FGC {station_name}"
-        self._attr_unique_id = f"{entry.entry_id}_{station_code}"
+        self._direction_label = direction_label
+        self._attr_name = (
+            f"FGC {station_name} → {direction_label}"
+            if direction_label
+            else f"FGC {station_name}"
+        )
+        self._attr_unique_id = f"{entry.entry_id}_{stop_id}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name="FGC Trains",
@@ -70,7 +98,9 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
 
     @property
     def _upcoming(self) -> list[dict]:
-        return self.coordinator.data.get(self._station_code) or []
+        return self.coordinator.data.get(self._station_code, {}).get(
+            self._stop_id, []
+        )
 
     @property
     def native_value(self) -> int | None:
@@ -83,6 +113,8 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         attrs = {ATTR_STATION_NAME: self._station_name}
+        if self._direction_label:
+            attrs[ATTR_DIRECTION] = self._direction_label
         upcoming = self._upcoming
         if not upcoming:
             return attrs

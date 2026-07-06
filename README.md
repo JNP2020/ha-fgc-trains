@@ -30,11 +30,14 @@ Copy `custom_components/fgc` into your Home Assistant
    **Configure** menu and choose "Add a station" / "Remove a station" — no
    need to re-run the setup wizard.
 
-Each station gets one sensor, `sensor.fgc_<station>`, whose state is the
-number of whole minutes until the next scheduled departure from that
-station (across all its platforms/lines). Attributes include the line,
-destination, platform, the exact next departure time, and up to four
-further upcoming departures.
+Each station gets one sensor per platform/direction (a single-platform
+terminus gets one sensor; an intermediate station with trains passing in
+both directions gets one sensor per direction, e.g. "FGC Sant Cugat Centre
+→ Barcelona - Plaça Catalunya" and "FGC Sant Cugat Centre → Terrassa
+Nacions Unides"). Each sensor's state is the number of whole minutes until
+the next scheduled departure in that direction. Attributes include the
+line (e.g. `S1`), destination, platform, a stable `direction` label, the
+exact next departure time, and up to four further upcoming departures.
 
 ## How it works
 

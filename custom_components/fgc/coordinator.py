@@ -6,10 +6,16 @@ that dataset can't answer server-side for text-typed time fields anyway),
 we fetch and cache each station's full remaining schedule once per day and
 then just re-filter that cached list against the current time on every
 (cheap, network-free) update.
+
+A "station" (as picked in the config/options flow) can have several
+platforms/`stop_id`s serving different directions (e.g. an intermediate
+stop on the line has one platform towards each terminus). Departures are
+grouped per platform so each direction gets its own sensor.
 """
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, TypedDict
 
@@ -27,6 +33,7 @@ class Departure(TypedDict):
     """A single upcoming departure."""
 
     datetime: datetime
+    stop_id: str
     line: str | None
     destination: str | None
     platform: str | None
@@ -36,6 +43,7 @@ class Departure(TypedDict):
 class _CachedSchedule(TypedDict):
     day: date
     departures: list[Departure]
+    platform_labels: dict[str, str]
 
 
 def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure]:
@@ -48,7 +56,8 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
     departures: list[Departure] = []
     for row in rows:
         raw_time = row.get("departure_time")
-        if not raw_time:
+        stop_id = row.get("stop_id")
+        if not raw_time or not stop_id:
             continue
         try:
             hours, minutes, seconds = (int(part) for part in raw_time.split(":"))
@@ -61,6 +70,7 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
         departures.append(
             Departure(
                 datetime=dep_dt,
+                stop_id=stop_id,
                 line=row.get("route_short_name"),
                 destination=row.get("trip_headsign"),
                 platform=row.get("platform_code"),
@@ -71,8 +81,26 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
     return departures
 
 
-class FgcCoordinator(DataUpdateCoordinator[dict[str, list[Departure]]]):
-    """Coordinator that keeps a rolling per-station list of upcoming departures."""
+def _compute_platform_labels(departures: list[Departure]) -> dict[str, str]:
+    """Pick the most common destination per platform as its direction label."""
+    by_platform: dict[str, Counter] = {}
+    station_names: dict[str, str] = {}
+    for dep in departures:
+        if dep["destination"]:
+            by_platform.setdefault(dep["stop_id"], Counter())[dep["destination"]] += 1
+        if dep["station_name"]:
+            station_names.setdefault(dep["stop_id"], dep["station_name"])
+    labels: dict[str, str] = {}
+    for stop_id, counter in by_platform.items():
+        labels[stop_id] = counter.most_common(1)[0][0]
+    return labels
+
+
+class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]]):
+    """Coordinator that keeps a rolling per-platform list of upcoming departures.
+
+    `data` is keyed as `{station_code: {platform_stop_id: [Departure, ...]}}`.
+    """
 
     def __init__(
         self, hass: HomeAssistant, client: FgcApiClient, station_codes: list[str]
@@ -83,11 +111,13 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, list[Departure]]]):
         self._client = client
         self.station_codes = station_codes
         self._schedules: dict[str, _CachedSchedule] = {}
+        # station_code -> {platform_stop_id: direction label}
+        self.platform_labels: dict[str, dict[str, str]] = {}
 
-    async def _async_update_data(self) -> dict[str, list[Departure]]:
+    async def _async_update_data(self) -> dict[str, dict[str, list[Departure]]]:
         now = dt_util.now()
         today = now.date()
-        result: dict[str, list[Departure]] = {}
+        result: dict[str, dict[str, list[Departure]]] = {}
 
         for code in self.station_codes:
             cached = self._schedules.get(code)
@@ -98,13 +128,21 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, list[Departure]]]):
                     raise UpdateFailed(
                         f"Error fetching FGC schedule for station {code}: {err}"
                     ) from err
+                departures = _parse_departures(rows, today)
                 cached = _CachedSchedule(
-                    day=today, departures=_parse_departures(rows, today)
+                    day=today,
+                    departures=departures,
+                    platform_labels=_compute_platform_labels(departures),
                 )
                 self._schedules[code] = cached
+                self.platform_labels[code] = cached["platform_labels"]
 
-            result[code] = [
-                dep for dep in cached["departures"] if dep["datetime"] >= now
-            ][:5]
+            by_platform: dict[str, list[Departure]] = {}
+            for dep in cached["departures"]:
+                if dep["datetime"] >= now:
+                    by_platform.setdefault(dep["stop_id"], []).append(dep)
+            result[code] = {
+                stop_id: deps[:5] for stop_id, deps in by_platform.items()
+            }
 
         return result
