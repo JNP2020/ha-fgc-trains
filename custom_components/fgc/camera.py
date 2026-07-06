@@ -1,9 +1,11 @@
-"""Camera platform for FGC ski resort webcams.
+"""Camera platform for FGC: ski resort webcams, and per-station departure
+board images (for companion-app home-screen widgets).
 
-Off by default (Configure -> Settings -> "Show ski resort webcams as
-cameras"). Each camera fetches its still image on demand — there's no
-polling of the images themselves, only of the (much cheaper) list of
-which webcams currently exist.
+Webcams are off by default (Configure -> Settings -> "Show ski resort
+webcams as cameras"); each fetches its still image on demand. Board
+cameras are created automatically for every configured station (same
+footprint as the departure sensors — no extra API calls, just rendered
+from data already being fetched).
 """
 from __future__ import annotations
 
@@ -17,7 +19,8 @@ from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .board_camera import FgcBoardCamera
+from .const import CONF_STATIONS, DOMAIN
 from .extra_coordinators import Webcam, WebcamCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,28 +29,38 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up camera entities for every currently-known active webcam, and
-    keep adding new ones as they appear. No-op if the webcams feature is off
-    (`webcam_coordinator` is None in that case)."""
-    coordinator: WebcamCoordinator | None = hass.data[DOMAIN][entry.entry_id].get(
-        "webcam_coordinator"
-    )
-    if coordinator is None:
+    """Set up the board-image camera for every configured station, plus
+    webcam cameras for every currently-known active webcam (keeping adding
+    new webcams as they appear). Webcams are skipped entirely if that
+    feature is off (`webcam_coordinator` is None in that case)."""
+    data = hass.data[DOMAIN][entry.entry_id]
+
+    coordinator = data["coordinator"]
+    stations = data["stations"]
+    board_entities = [
+        FgcBoardCamera(coordinator, entry, code, stations.get(code, {}).get("name", code))
+        for code in entry.options.get(CONF_STATIONS, [])
+    ]
+    if board_entities:
+        async_add_entities(board_entities)
+
+    webcam_coordinator: WebcamCoordinator | None = data.get("webcam_coordinator")
+    if webcam_coordinator is None:
         return
     known_ids: set[str] = set()
 
     @callback
     def _add_new_webcams() -> None:
         new_entities = [
-            FgcWebcamCamera(coordinator, entry, webcam_id)
-            for webcam_id in coordinator.data
+            FgcWebcamCamera(webcam_coordinator, entry, webcam_id)
+            for webcam_id in webcam_coordinator.data
             if webcam_id not in known_ids
         ]
         if new_entities:
             known_ids.update(entity.webcam_id for entity in new_entities)
             async_add_entities(new_entities)
 
-    entry.async_on_unload(coordinator.async_add_listener(_add_new_webcams))
+    entry.async_on_unload(webcam_coordinator.async_add_listener(_add_new_webcams))
     _add_new_webcams()
 
 

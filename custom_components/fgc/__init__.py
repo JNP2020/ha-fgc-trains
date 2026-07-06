@@ -170,13 +170,16 @@ def _remove_stale_entities(
     these is either for a removed station/destination or a feature that's
     now turned off, either way no longer wanted.
 
-    Device trackers and cameras (live train positions, ski webcams) have
-    unrelated unique_id schemes and their own dynamic lifecycle — while
-    enabled they go unavailable rather than get removed when a unit/webcam
-    drops out of its feed, so each is only swept here as a whole domain
-    when its feature is turned off.
+    Device trackers (live train positions) and webcam cameras have their
+    own unrelated unique_id scheme and dynamic lifecycle — while enabled
+    they go unavailable rather than get removed when a unit/webcam drops
+    out of its feed, so each is only swept here as a whole when its
+    feature is turned off. Board-image cameras, by contrast, are static
+    (one per configured station, like the departure sensors), so they get
+    the same "wanted set" treatment as sensors rather than an on/off sweep.
     """
     registry = er.async_get(hass)
+    station_codes = entry.options.get(CONF_STATIONS, [])
     wanted_sensor_ids = {
         f"{entry.entry_id}_{code}_{slugify(destination)}"
         for code, destinations in coordinator.destinations.items()
@@ -188,8 +191,7 @@ def _remove_stale_entities(
         }
     if air_quality_coordinator is not None:
         wanted_sensor_ids |= {
-            f"{entry.entry_id}_airquality_{code}"
-            for code in entry.options.get(CONF_STATIONS, [])
+            f"{entry.entry_id}_airquality_{code}" for code in station_codes
         }
     if ski_parking_coordinator is not None:
         wanted_sensor_ids |= {
@@ -199,14 +201,23 @@ def _remove_stale_entities(
     if carbon_footprint_coordinator is not None:
         wanted_sensor_ids.add(f"{entry.entry_id}_carbon_footprint")
 
+    board_prefix = f"{entry.entry_id}_board_"
+    webcam_prefix = f"{entry.entry_id}_webcam_"
+    wanted_board_ids = {f"{board_prefix}{code}" for code in station_codes}
+
     for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        unique_id = entity_entry.unique_id or ""
         if entity_entry.domain == "sensor":
-            if entity_entry.unique_id not in wanted_sensor_ids:
+            if unique_id not in wanted_sensor_ids:
                 registry.async_remove(entity_entry.entity_id)
         elif entity_entry.domain == "device_tracker" and not map_enabled:
             registry.async_remove(entity_entry.entity_id)
-        elif entity_entry.domain == "camera" and not webcams_enabled:
-            registry.async_remove(entity_entry.entity_id)
+        elif entity_entry.domain == "camera":
+            if unique_id.startswith(board_prefix):
+                if unique_id not in wanted_board_ids:
+                    registry.async_remove(entity_entry.entity_id)
+            elif unique_id.startswith(webcam_prefix) and not webcams_enabled:
+                registry.async_remove(entity_entry.entity_id)
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

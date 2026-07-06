@@ -1,6 +1,12 @@
 # FGC Trains for Home Assistant
 
-![FGC logo](custom_components/fgc/logo.png)
+<img src="custom_components/fgc/logo.png" alt="FGC logo" width="180">
+
+*The FGC logo above is used only to identify the transit network this
+integration talks to. This is an independent, community-made project and
+is not affiliated with, endorsed by, or supported by Ferrocarrils de la
+Generalitat de Catalunya (FGC) — it's built entirely on FGC's public open
+data API. Not an official product.*
 
 Custom Home Assistant integration that reports minutes until the next train
 departure from any FGC (Ferrocarrils de la Generalitat de Catalunya)
@@ -99,6 +105,23 @@ rows: 4                      # optional, default 4
 A small green dot next to a destination means that row's time is a live
 GTFS-Realtime prediction rather than the static schedule.
 
+### Home screen widget (companion app)
+
+The Android/iOS Home Assistant app's native home-screen widgets can't run
+the Lovelace card above (widgets don't execute custom card JavaScript) —
+so instead, the integration creates a `camera` entity per configured
+station, **"FGC \<station\> Board"**, that renders the exact same
+departure-board style as a plain image, redrawn fresh every time
+something asks for a snapshot. Point a **Camera**/**Picture** widget at
+it from the companion app's widget picker and you get the departure
+board on your home screen, no separate setup needed — it's created
+automatically alongside the regular sensors.
+
+Note native widgets refresh on the OS's schedule (typically every 15–30+
+minutes in the background, more often if you open the app), so unlike
+the live Lovelace card this won't count down second-by-second — it's a
+snapshot that's accurate as of whenever it was last refreshed.
+
 ### Ski/mountain resort sensors
 
 The integration also creates one sensor per FGC-operated mountain resort
@@ -155,3 +178,8 @@ prediction or shown as if the same train appeared twice.
 If you see a log warning about the FGC API quota running low, either add
 your own API key in the integration's settings for a higher limit, or turn
 off the live map / ski sensors to reduce daily request usage.
+
+The board-image camera (used for the home screen widget) is rendered with
+[Pillow](https://python-pillow.org/) using the bundled
+[Roboto](https://github.com/googlefonts/roboto-2) font (Apache License 2.0,
+see `custom_components/fgc/fonts/LICENSE.txt`).

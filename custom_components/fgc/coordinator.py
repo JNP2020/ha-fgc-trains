@@ -283,3 +283,15 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
             }
 
         return result
+
+    def get_board(self, station_code: str) -> list[Departure]:
+        """Return every destination's upcoming departures for one station,
+        merged into a single chronological list — mirrors what the
+        fgc-timetable-card Lovelace card assembles client-side, for the
+        board-image camera. Already deduped/realtime-adjusted since it's
+        built from `self.data`.
+        """
+        by_destination = self.data.get(station_code, {})
+        merged = [dep for deps in by_destination.values() for dep in deps]
+        merged.sort(key=lambda dep: dep["datetime"])
+        return merged
