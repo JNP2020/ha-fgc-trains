@@ -8,6 +8,7 @@ CONF_STATIONS = "stations"
 CONF_STATION_CODE = "station_code"
 CONF_ENABLE_MAP = "enable_map"
 CONF_ENABLE_SKI = "enable_ski"
+CONF_ENABLE_ALERTS = "enable_alerts"
 CONF_ENABLE_AIR_QUALITY = "enable_air_quality"
 CONF_ENABLE_SKI_PARKING = "enable_ski_parking"
 CONF_ENABLE_WEBCAMS = "enable_webcams"
@@ -25,6 +26,7 @@ DATASET_TRIP_UPDATES = "trip-updates-gtfs_realtime"
 DATASET_AIR_QUALITY = "calidad-del-aire-por-paradas0"
 DATASET_SKI_PARKING = "informacio-tecnica-aparcaments"
 DATASET_CARBON_FOOTPRINT = "petjada-de-carboni-fgc"
+DATASET_ALERTS = "avisos"
 
 # Max rows the Opendatasoft Explore API allows per request.
 API_PAGE_SIZE = 100
@@ -35,6 +37,7 @@ SKI_SCAN_INTERVAL = timedelta(minutes=10)
 # These barely change intraday, so they're polled far less often.
 AIR_QUALITY_SCAN_INTERVAL = timedelta(hours=1)
 CARBON_FOOTPRINT_SCAN_INTERVAL = timedelta(hours=24)
+ALERTS_SCAN_INTERVAL = timedelta(minutes=5)
 
 # How far a live GTFS-RT predicted departure may drift from the static
 # schedule and still be considered "the same" departure. The realtime feed
@@ -75,6 +78,11 @@ ATTR_YEAR = "year"
 ATTR_MOBILITY_EMISSIONS = "mobility_emissions_tco2e"
 ATTR_TOURISM_EMISSIONS = "tourism_emissions_tco2e"
 ATTR_EMISSIONS_BY_SCOPE = "emissions_by_scope"
+
+ATTR_SEVERITY = "severity"
+ATTR_ALERT_TYPE = "alert_type"
+ATTR_VALID_FROM = "valid_from"
+ATTR_VALID_UNTIL = "valid_until"
 
 FRONTEND_URL_BASE = "/fgc_static"
 CARD_JS_FILENAME = "fgc-timetable-card.js"

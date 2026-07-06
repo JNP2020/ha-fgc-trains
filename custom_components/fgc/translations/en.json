@@ -50,10 +50,11 @@
       },
       "settings": {
         "title": "Settings",
-        "description": "Turn optional features on or off. The first two are on by default; the rest are niche extras that are off by default to keep things tidy and save on API requests.",
+        "description": "Turn optional features on or off. The first three are on by default; the rest are niche extras that are off by default to keep things tidy and save on API requests.",
         "data": {
           "enable_map": "Live train positions on the map",
           "enable_ski": "Mountain resort status sensors",
+          "enable_alerts": "Service alerts sensor",
           "enable_air_quality": "Air quality sensors near your stations",
           "enable_ski_parking": "Ski resort parking sensors",
           "enable_webcams": "Ski resort webcams as cameras",

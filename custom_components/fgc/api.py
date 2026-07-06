@@ -13,6 +13,7 @@ from .const import (
     API_BASE_URL,
     API_PAGE_SIZE,
     DATASET_AIR_QUALITY,
+    DATASET_ALERTS,
     DATASET_CARBON_FOOTPRINT,
     DATASET_SCHEDULE,
     DATASET_SKI_ALERTS,
@@ -281,3 +282,8 @@ class FgcApiClient:
     async def async_get_carbon_footprint(self) -> list[dict[str, Any]]:
         """Return FGC's yearly corporate greenhouse-gas emissions report."""
         return await self._get_all_pages(DATASET_CARBON_FOOTPRINT, {})
+
+    async def async_get_service_alerts(self) -> list[dict[str, Any]]:
+        """Return every currently-published FGC train service alert
+        (network/line-wide disruptions, planned works, etc.)."""
+        return await self._get_all_pages(DATASET_ALERTS, {})

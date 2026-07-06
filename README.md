@@ -122,6 +122,16 @@ minutes in the background, more often if you open the app), so unlike
 the live Lovelace card this won't count down second-by-second — it's a
 snapshot that's accurate as of whenever it was last refreshed.
 
+### Service alerts
+
+A single **"FGC Service Alerts"** sensor, state = number of currently
+active network/line-wide service alerts (delays, disruptions, planned
+works, etc.), with the full text of each as an attribute. Distinct from
+the noisy GTFS-Realtime "alerts" feed (which is mostly routine per-trip
+annotations, not real disruptions) — this uses FGC's own small, clean
+feed of actual published alerts. On by default; switch off from
+**Configure -> Settings** ("Service alerts sensor").
+
 ### Ski/mountain resort sensors
 
 The integration also creates one sensor per FGC-operated mountain resort

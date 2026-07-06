@@ -11,10 +11,12 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .alerts_coordinator import AlertsCoordinator
 from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import (
     CONF_API_KEY,
     CONF_ENABLE_AIR_QUALITY,
+    CONF_ENABLE_ALERTS,
     CONF_ENABLE_CARBON_FOOTPRINT,
     CONF_ENABLE_MAP,
     CONF_ENABLE_SKI,
@@ -68,6 +70,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ski_coordinator = SkiCoordinator(hass, client)
         await ski_coordinator.async_config_entry_first_refresh()
 
+    alerts_coordinator = None
+    if entry.options.get(CONF_ENABLE_ALERTS, True):
+        alerts_coordinator = AlertsCoordinator(hass, client)
+        await alerts_coordinator.async_config_entry_first_refresh()
+
     # Off by default: niche/low-demand data sources added after the core
     # feature set, kept opt-in so most users don't pay their (small) API
     # cost for entities they'll never look at.
@@ -96,6 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
         "vehicle_coordinator": vehicle_coordinator,
         "ski_coordinator": ski_coordinator,
+        "alerts_coordinator": alerts_coordinator,
         "air_quality_coordinator": air_quality_coordinator,
         "ski_parking_coordinator": ski_parking_coordinator,
         "webcam_coordinator": webcam_coordinator,
@@ -111,6 +119,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         map_enabled=vehicle_coordinator is not None,
         webcams_enabled=webcam_coordinator is not None,
         ski_coordinator=ski_coordinator,
+        alerts_enabled=alerts_coordinator is not None,
         air_quality_coordinator=air_quality_coordinator,
         ski_parking_coordinator=ski_parking_coordinator,
         carbon_footprint_coordinator=carbon_footprint_coordinator,
@@ -158,6 +167,7 @@ def _remove_stale_entities(
     map_enabled: bool,
     webcams_enabled: bool,
     ski_coordinator: SkiCoordinator | None,
+    alerts_enabled: bool,
     air_quality_coordinator: AirQualityCoordinator | None,
     ski_parking_coordinator: SkiParkingCoordinator | None,
     carbon_footprint_coordinator: CarbonFootprintCoordinator | None,
@@ -189,6 +199,8 @@ def _remove_stale_entities(
         wanted_sensor_ids |= {
             f"{entry.entry_id}_ski_{slugify(name)}" for name in ski_coordinator.data
         }
+    if alerts_enabled:
+        wanted_sensor_ids.add(f"{entry.entry_id}_service_alerts")
     if air_quality_coordinator is not None:
         wanted_sensor_ids |= {
             f"{entry.entry_id}_airquality_{code}" for code in station_codes

@@ -31,6 +31,7 @@ from .const import (
     CONF_STATIONS,
     DOMAIN,
 )
+from .alerts_sensor import ServiceAlertsSensor
 from .coordinator import FgcCoordinator
 from .extra_sensors import AirQualitySensor, CarbonFootprintSensor, SkiParkingSensor
 from .ski_coordinator import SkiCoordinator
@@ -72,6 +73,10 @@ async def async_setup_entry(
                     None if single_destination else destination,
                 )
             )
+
+    alerts_coordinator = data.get("alerts_coordinator")
+    if alerts_coordinator is not None:
+        entities.append(ServiceAlertsSensor(alerts_coordinator, entry))
 
     ski_coordinator: SkiCoordinator | None = data.get("ski_coordinator")
     if ski_coordinator is not None:

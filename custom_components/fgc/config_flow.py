@@ -24,6 +24,7 @@ from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import (
     CONF_API_KEY,
     CONF_ENABLE_AIR_QUALITY,
+    CONF_ENABLE_ALERTS,
     CONF_ENABLE_CARBON_FOOTPRINT,
     CONF_ENABLE_MAP,
     CONF_ENABLE_SKI,
@@ -130,6 +131,9 @@ class FgcOptionsFlow(OptionsFlow):
                 ): bool,
                 vol.Required(
                     CONF_ENABLE_SKI, default=options.get(CONF_ENABLE_SKI, True)
+                ): bool,
+                vol.Required(
+                    CONF_ENABLE_ALERTS, default=options.get(CONF_ENABLE_ALERTS, True)
                 ): bool,
                 vol.Required(
                     CONF_ENABLE_AIR_QUALITY,
