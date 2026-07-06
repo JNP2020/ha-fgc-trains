@@ -9,11 +9,14 @@ CONF_STATION_CODE = "station_code"
 
 API_BASE_URL = "https://dadesobertes.fgc.cat/api/explore/v2.1/catalog/datasets"
 DATASET_SCHEDULE = "viajes-de-hoy"
+DATASET_VEHICLE_POSITIONS = "posicionament-dels-trens"
+DATASET_STOPS = "gtfs_stops"
 
 # Max rows the Opendatasoft Explore API allows per request.
 API_PAGE_SIZE = 100
 
 SCAN_INTERVAL = timedelta(seconds=30)
+VEHICLE_SCAN_INTERVAL = timedelta(seconds=30)
 
 ATTR_LINE = "line"
 ATTR_DESTINATION = "destination"

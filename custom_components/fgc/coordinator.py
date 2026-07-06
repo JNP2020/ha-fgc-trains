@@ -8,18 +8,20 @@ then just re-filter that cached list against the current time on every
 (cheap, network-free) update.
 
 A "station" (as picked in the config/options flow) can have several
-platforms/`stop_id`s. At an intermediate stop these usually serve different
-directions (one platform towards each terminus) and get one sensor each.
-At a terminus, one platform is typically dedicated to trains ending their
-trip there; those rows are announced with a `trip_headsign` equal to the
-station's own name (the train isn't going anywhere further) and are
-dropped entirely, so a plain terminus collapses back down to a single
-"next departure" sensor instead of getting a bogus platform for arrivals.
+platforms/`stop_id`s, but which physical platform a train uses is mostly an
+operational/capacity detail, not a meaningful "direction" — a busy terminus
+like Plaça Catalunya spreads several different lines/destinations across
+its platforms without a clean one-platform-per-destination mapping.
+Departures are instead grouped by their final destination (`trip_headsign`),
+which is what a rider actually cares about ("next train to X"), so each
+distinct destination gets its own sensor. Rows where the destination is
+this very stop are trains ending their trip here, not a departure a rider
+could board, so they're dropped rather than turned into a Departure; a
+plain terminus then naturally collapses down to a single destination/sensor.
 """
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, TypedDict
 
@@ -37,9 +39,8 @@ class Departure(TypedDict):
     """A single upcoming departure."""
 
     datetime: datetime
-    stop_id: str
     line: str | None
-    destination: str | None
+    destination: str
     platform: str | None
     station_name: str | None
 
@@ -47,7 +48,7 @@ class Departure(TypedDict):
 class _CachedSchedule(TypedDict):
     day: date
     departures: list[Departure]
-    platform_labels: dict[str, str]
+    destinations: list[str]
 
 
 def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure]:
@@ -55,21 +56,16 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
 
     GTFS allows `departure_time` past "24:00:00" for trips that run into the
     next service day (e.g. "24:26:00" == 00:26 the next calendar day).
-
-    Rows where the announced destination is this very stop are trains
-    ending their trip here, not a departure a rider could board, so they're
-    dropped rather than turned into a Departure.
     """
     tzinfo = dt_util.now().tzinfo
     departures: list[Departure] = []
     for row in rows:
         raw_time = row.get("departure_time")
-        stop_id = row.get("stop_id")
         destination = row.get("trip_headsign")
         stop_name = row.get("stop_name")
-        if not raw_time or not stop_id:
+        if not raw_time or not destination:
             continue
-        if destination and stop_name and destination == stop_name:
+        if destination == stop_name:
             continue
         try:
             hours, minutes, seconds = (int(part) for part in raw_time.split(":"))
@@ -82,7 +78,6 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
         departures.append(
             Departure(
                 datetime=dep_dt,
-                stop_id=stop_id,
                 line=row.get("route_short_name"),
                 destination=destination,
                 platform=row.get("platform_code"),
@@ -93,21 +88,10 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
     return departures
 
 
-def _compute_platform_labels(departures: list[Departure]) -> dict[str, str]:
-    """Pick the most common destination per platform as its direction label."""
-    by_platform: dict[str, Counter] = {}
-    for dep in departures:
-        if dep["destination"]:
-            by_platform.setdefault(dep["stop_id"], Counter())[dep["destination"]] += 1
-    return {
-        stop_id: counter.most_common(1)[0][0] for stop_id, counter in by_platform.items()
-    }
-
-
 class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]]):
-    """Coordinator that keeps a rolling per-platform list of upcoming departures.
+    """Coordinator that keeps a rolling per-destination list of upcoming departures.
 
-    `data` is keyed as `{station_code: {platform_stop_id: [Departure, ...]}}`.
+    `data` is keyed as `{station_code: {destination: [Departure, ...]}}`.
     """
 
     def __init__(
@@ -124,8 +108,8 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
         self._stations = stations
         self.station_codes = station_codes
         self._schedules: dict[str, _CachedSchedule] = {}
-        # station_code -> {platform_stop_id: direction label}
-        self.platform_labels: dict[str, dict[str, str]] = {}
+        # station_code -> list of distinct destinations served from it today
+        self.destinations: dict[str, list[str]] = {}
 
     async def _async_update_data(self) -> dict[str, dict[str, list[Departure]]]:
         now = dt_util.now()
@@ -146,17 +130,17 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
                 cached = _CachedSchedule(
                     day=today,
                     departures=departures,
-                    platform_labels=_compute_platform_labels(departures),
+                    destinations=sorted({dep["destination"] for dep in departures}),
                 )
                 self._schedules[code] = cached
-                self.platform_labels[code] = cached["platform_labels"]
+                self.destinations[code] = cached["destinations"]
 
-            by_platform: dict[str, list[Departure]] = {}
+            by_destination: dict[str, list[Departure]] = {}
             for dep in cached["departures"]:
                 if dep["datetime"] >= now:
-                    by_platform.setdefault(dep["stop_id"], []).append(dep)
+                    by_destination.setdefault(dep["destination"], []).append(dep)
             result[code] = {
-                stop_id: deps[:5] for stop_id, deps in by_platform.items()
+                dest: deps[:5] for dest, deps in by_destination.items()
             }
 
         return result

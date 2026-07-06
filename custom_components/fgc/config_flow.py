@@ -126,7 +126,7 @@ class FgcOptionsFlow(OptionsFlow):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_STATION_CODE): SelectSelector(
+                vol.Required(CONF_STATION_CODE, default=[]): SelectSelector(
                     SelectSelectorConfig(
                         options=_station_options(available),
                         mode=SelectSelectorMode.DROPDOWN,
@@ -160,7 +160,7 @@ class FgcOptionsFlow(OptionsFlow):
         ]
         schema = vol.Schema(
             {
-                vol.Required(CONF_STATION_CODE): SelectSelector(
+                vol.Required(CONF_STATION_CODE, default=[]): SelectSelector(
                     SelectSelectorConfig(
                         options=options,
                         mode=SelectSelectorMode.DROPDOWN,

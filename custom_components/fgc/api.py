@@ -6,7 +6,13 @@ from typing import Any, TypedDict
 
 import aiohttp
 
-from .const import API_BASE_URL, API_PAGE_SIZE, DATASET_SCHEDULE
+from .const import (
+    API_BASE_URL,
+    API_PAGE_SIZE,
+    DATASET_SCHEDULE,
+    DATASET_STOPS,
+    DATASET_VEHICLE_POSITIONS,
+)
 
 _CODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -121,3 +127,23 @@ class FgcApiClient:
                 ),
             },
         )
+
+    async def async_get_vehicle_positions(self) -> list[dict[str, Any]]:
+        """Return the current Geotren position record for every active train."""
+        return await self._get_all_pages(DATASET_VEHICLE_POSITIONS, {})
+
+    async def async_get_station_names(self) -> dict[str, str]:
+        """Return every stop_id -> stop_name in the network.
+
+        Includes the bare parent-station codes (e.g. "PC") used by the
+        vehicle-position feed's origin/destination/next-stop fields, which
+        aren't reachable through `async_get_stations` (that one is built
+        from `viajes-de-hoy`'s stop_times rows, which never reference a bare
+        parent code directly).
+        """
+        rows = await self._get_all_pages(DATASET_STOPS, {"select": "stop_id, stop_name"})
+        return {
+            row["stop_id"]: row["stop_name"]
+            for row in rows
+            if row.get("stop_id") and row.get("stop_name")
+        }

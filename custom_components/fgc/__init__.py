@@ -11,8 +11,10 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import CONF_API_KEY, CONF_STATIONS, DOMAIN
 from .coordinator import FgcCoordinator
+from .util import slugify
+from .vehicle_coordinator import FgcVehicleCoordinator
 
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.DEVICE_TRACKER]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -31,9 +33,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = FgcCoordinator(hass, client, stations, station_codes)
     await coordinator.async_config_entry_first_refresh()
 
+    vehicle_coordinator = FgcVehicleCoordinator(hass, client)
+    await vehicle_coordinator.async_config_entry_first_refresh()
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
+        "vehicle_coordinator": vehicle_coordinator,
         "client": client,
         "stations": stations,
     }
@@ -48,20 +54,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def _remove_stale_entities(
     hass: HomeAssistant, entry: ConfigEntry, coordinator: FgcCoordinator
 ) -> None:
-    """Drop entities for platforms/stations no longer configured.
+    """Drop *sensor* entities for stations/destinations no longer configured.
 
-    Each entity's unique_id is keyed by platform `stop_id`, discovered via
-    `coordinator.platform_labels` (populated by the first refresh above).
+    Each sensor's unique_id is keyed by station code + destination slug,
+    discovered via `coordinator.destinations` (populated by the first
+    refresh above). Device trackers (live train positions) have their own
+    unrelated unique_id scheme and lifecycle (they go unavailable rather
+    than get removed when a unit drops out of the feed), so this only ever
+    touches the `sensor` domain.
     """
     registry = er.async_get(hass)
-    wanted_stop_ids = {
-        stop_id
-        for labels in coordinator.platform_labels.values()
-        for stop_id in labels
+    wanted_unique_ids = {
+        f"{entry.entry_id}_{code}_{slugify(destination)}"
+        for code, destinations in coordinator.destinations.items()
+        for destination in destinations
     }
-    wanted_unique_ids = {f"{entry.entry_id}_{stop_id}" for stop_id in wanted_stop_ids}
     for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
-        if entity_entry.unique_id not in wanted_unique_ids:
+        if (
+            entity_entry.domain == "sensor"
+            and entity_entry.unique_id not in wanted_unique_ids
+        ):
             registry.async_remove(entity_entry.entity_id)
 
 

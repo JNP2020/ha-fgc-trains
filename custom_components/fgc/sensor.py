@@ -28,17 +28,20 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import FgcCoordinator
+from .util import slugify
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up one sensor per platform/direction for each configured station.
+    """Set up one sensor per destination for each configured station.
 
-    An intermediate station has a separate platform (and thus a separate
-    sensor) per direction; a single-platform terminus just gets one sensor.
-    The coordinator has already done its first refresh by the time this
-    runs, so `platform_labels` is populated for every configured station.
+    A station with trains heading to several distinct destinations (e.g. an
+    intermediate stop, or a hub terminus spreading lines across platforms)
+    gets one sensor per destination; a station with a single destination all
+    day just gets one sensor. The coordinator has already done its first
+    refresh by the time this runs, so `destinations` is populated for every
+    configured station.
     """
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: FgcCoordinator = data["coordinator"]
@@ -47,24 +50,24 @@ async def async_setup_entry(
     entities = []
     for code in entry.options.get(CONF_STATIONS, []):
         station_name = stations.get(code, {}).get("name", code)
-        labels = coordinator.platform_labels.get(code, {})
-        multi_platform = len(labels) > 1
-        for stop_id, direction_label in labels.items():
+        destinations = coordinator.destinations.get(code, [])
+        single_destination = len(destinations) <= 1
+        for destination in destinations:
             entities.append(
                 FgcDepartureSensor(
                     coordinator,
                     entry,
                     code,
-                    stop_id,
+                    destination,
                     station_name,
-                    direction_label if multi_platform else None,
+                    None if single_destination else destination,
                 )
             )
     async_add_entities(entities)
 
 
 class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
-    """Minutes remaining until the next train departure from one platform."""
+    """Minutes remaining until the next train departure to one destination."""
 
     _attr_icon = "mdi:train"
     _attr_native_unit_of_measurement = _MINUTES
@@ -74,13 +77,13 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
         coordinator: FgcCoordinator,
         entry: ConfigEntry,
         station_code: str,
-        stop_id: str,
+        destination: str,
         station_name: str,
         direction_label: str | None,
     ) -> None:
         super().__init__(coordinator)
         self._station_code = station_code
-        self._stop_id = stop_id
+        self._destination = destination
         self._station_name = station_name
         self._direction_label = direction_label
         self._attr_name = (
@@ -88,7 +91,7 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
             if direction_label
             else f"FGC {station_name}"
         )
-        self._attr_unique_id = f"{entry.entry_id}_{stop_id}"
+        self._attr_unique_id = f"{entry.entry_id}_{station_code}_{slugify(destination)}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name="FGC Trains",
@@ -99,7 +102,7 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
     @property
     def _upcoming(self) -> list[dict]:
         return self.coordinator.data.get(self._station_code, {}).get(
-            self._stop_id, []
+            self._destination, []
         )
 
     @property
