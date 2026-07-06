@@ -8,9 +8,13 @@ then just re-filter that cached list against the current time on every
 (cheap, network-free) update.
 
 A "station" (as picked in the config/options flow) can have several
-platforms/`stop_id`s serving different directions (e.g. an intermediate
-stop on the line has one platform towards each terminus). Departures are
-grouped per platform so each direction gets its own sensor.
+platforms/`stop_id`s. At an intermediate stop these usually serve different
+directions (one platform towards each terminus) and get one sensor each.
+At a terminus, one platform is typically dedicated to trains ending their
+trip there; those rows are announced with a `trip_headsign` equal to the
+station's own name (the train isn't going anywhere further) and are
+dropped entirely, so a plain terminus collapses back down to a single
+"next departure" sensor instead of getting a bogus platform for arrivals.
 """
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import FgcApiClient, FgcApiError
+from .api import FgcApiClient, FgcApiError, StationInfo
 from .const import DOMAIN, SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,13 +55,21 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
 
     GTFS allows `departure_time` past "24:00:00" for trips that run into the
     next service day (e.g. "24:26:00" == 00:26 the next calendar day).
+
+    Rows where the announced destination is this very stop are trains
+    ending their trip here, not a departure a rider could board, so they're
+    dropped rather than turned into a Departure.
     """
     tzinfo = dt_util.now().tzinfo
     departures: list[Departure] = []
     for row in rows:
         raw_time = row.get("departure_time")
         stop_id = row.get("stop_id")
+        destination = row.get("trip_headsign")
+        stop_name = row.get("stop_name")
         if not raw_time or not stop_id:
+            continue
+        if destination and stop_name and destination == stop_name:
             continue
         try:
             hours, minutes, seconds = (int(part) for part in raw_time.split(":"))
@@ -72,9 +84,9 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
                 datetime=dep_dt,
                 stop_id=stop_id,
                 line=row.get("route_short_name"),
-                destination=row.get("trip_headsign"),
+                destination=destination,
                 platform=row.get("platform_code"),
-                station_name=row.get("stop_name"),
+                station_name=stop_name,
             )
         )
     departures.sort(key=lambda dep: dep["datetime"])
@@ -84,16 +96,12 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
 def _compute_platform_labels(departures: list[Departure]) -> dict[str, str]:
     """Pick the most common destination per platform as its direction label."""
     by_platform: dict[str, Counter] = {}
-    station_names: dict[str, str] = {}
     for dep in departures:
         if dep["destination"]:
             by_platform.setdefault(dep["stop_id"], Counter())[dep["destination"]] += 1
-        if dep["station_name"]:
-            station_names.setdefault(dep["stop_id"], dep["station_name"])
-    labels: dict[str, str] = {}
-    for stop_id, counter in by_platform.items():
-        labels[stop_id] = counter.most_common(1)[0][0]
-    return labels
+    return {
+        stop_id: counter.most_common(1)[0][0] for stop_id, counter in by_platform.items()
+    }
 
 
 class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]]):
@@ -103,12 +111,17 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
     """
 
     def __init__(
-        self, hass: HomeAssistant, client: FgcApiClient, station_codes: list[str]
+        self,
+        hass: HomeAssistant,
+        client: FgcApiClient,
+        stations: dict[str, StationInfo],
+        station_codes: list[str],
     ) -> None:
         super().__init__(
             hass, _LOGGER, name=DOMAIN, update_interval=SCAN_INTERVAL
         )
         self._client = client
+        self._stations = stations
         self.station_codes = station_codes
         self._schedules: dict[str, _CachedSchedule] = {}
         # station_code -> {platform_stop_id: direction label}
@@ -122,8 +135,9 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
         for code in self.station_codes:
             cached = self._schedules.get(code)
             if cached is None or cached["day"] != today:
+                stop_ids = self._stations.get(code, {}).get("stop_ids", [code])
                 try:
-                    rows = await self._client.async_get_day_schedule(code)
+                    rows = await self._client.async_get_day_schedule(stop_ids)
                 except FgcApiError as err:
                     raise UpdateFailed(
                         f"Error fetching FGC schedule for station {code}: {err}"

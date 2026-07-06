@@ -21,21 +21,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     client = FgcApiClient(session, entry.data.get(CONF_API_KEY))
 
     try:
-        station_names = await client.async_get_stations()
+        stations = await client.async_get_stations()
     except FgcAuthError as err:
         raise ConfigEntryAuthFailed("Invalid FGC API key") from err
     except FgcApiError as err:
         raise ConfigEntryNotReady(f"Could not reach the FGC API: {err}") from err
 
     station_codes = entry.options.get(CONF_STATIONS, [])
-    coordinator = FgcCoordinator(hass, client, station_codes)
+    coordinator = FgcCoordinator(hass, client, stations, station_codes)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
         "client": client,
-        "station_names": station_names,
+        "stations": stations,
     }
 
     _remove_stale_entities(hass, entry, coordinator)

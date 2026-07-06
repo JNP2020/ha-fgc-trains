@@ -2,13 +2,20 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, TypedDict
 
 import aiohttp
 
 from .const import API_BASE_URL, API_PAGE_SIZE, DATASET_SCHEDULE
 
 _CODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+class StationInfo(TypedDict):
+    """A physical station: its display name and every platform stop_id it has."""
+
+    name: str
+    stop_ids: list[str]
 
 
 class FgcApiError(Exception):
@@ -65,12 +72,13 @@ class FgcApiClient:
                 break
         return results
 
-    async def async_get_stations(self) -> dict[str, str]:
-        """Return a mapping of station code -> human-readable station name.
+    async def async_get_stations(self) -> dict[str, StationInfo]:
+        """Return a mapping of station code -> {name, stop_ids}.
 
-        A "station" is the `parent_station` shared by a stop's platforms, or
-        the stop's own `stop_id` for single-platform termini that have no
-        `parent_station`.
+        A "station" is every platform sharing a `parent_station`. Some
+        termini have multiple platforms (e.g. one for arrivals, one for
+        departures) with no `parent_station` linking them at all, so those
+        are instead grouped by matching `stop_name`.
         """
         rows = await self._get_all_pages(
             DATASET_SCHEDULE,
@@ -79,19 +87,29 @@ class FgcApiClient:
                 "group_by": "parent_station, stop_id, stop_name",
             },
         )
-        stations: dict[str, str] = {}
+        groups: dict[tuple[str, str], StationInfo] = {}
         for row in rows:
-            code = row.get("parent_station") or row.get("stop_id")
+            stop_id = row.get("stop_id")
             name = row.get("stop_name")
-            if code and name:
-                stations[code] = name
+            parent = row.get("parent_station")
+            if not stop_id or not name:
+                continue
+            key = ("parent", parent) if parent else ("name", name)
+            group = groups.setdefault(key, StationInfo(name=name, stop_ids=[]))
+            group["stop_ids"].append(stop_id)
+
+        stations: dict[str, StationInfo] = {}
+        for (kind, _value), info in groups.items():
+            info["stop_ids"].sort()
+            code = _value if kind == "parent" else info["stop_ids"][0]
+            stations[code] = info
         return stations
 
-    async def async_get_day_schedule(self, station_code: str) -> list[dict[str, Any]]:
-        """Return every scheduled stop-time at `station_code` for today."""
-        if not _CODE_RE.match(station_code):
-            raise FgcApiError(f"Invalid station code: {station_code!r}")
-        where = f'parent_station="{station_code}" or stop_id="{station_code}"'
+    async def async_get_day_schedule(self, stop_ids: list[str]) -> list[dict[str, Any]]:
+        """Return every scheduled stop-time at any of `stop_ids` for today."""
+        if not stop_ids or not all(_CODE_RE.match(s) for s in stop_ids):
+            raise FgcApiError(f"Invalid stop ids: {stop_ids!r}")
+        where = " or ".join(f'stop_id="{s}"' for s in stop_ids)
         return await self._get_all_pages(
             DATASET_SCHEDULE,
             {

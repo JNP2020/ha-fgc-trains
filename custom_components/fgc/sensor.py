@@ -42,11 +42,11 @@ async def async_setup_entry(
     """
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: FgcCoordinator = data["coordinator"]
-    station_names: dict[str, str] = data["station_names"]
+    stations: dict[str, dict] = data["stations"]
 
     entities = []
     for code in entry.options.get(CONF_STATIONS, []):
-        station_name = station_names.get(code, code)
+        station_name = stations.get(code, {}).get("name", code)
         labels = coordinator.platform_labels.get(code, {})
         multi_platform = len(labels) > 1
         for stop_id, direction_label in labels.items():

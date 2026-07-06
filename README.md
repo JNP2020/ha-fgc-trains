@@ -1,5 +1,7 @@
 # FGC Trains for Home Assistant
 
+![FGC logo](custom_components/fgc/logo.png)
+
 Custom Home Assistant integration that reports minutes until the next train
 departure from any FGC (Ferrocarrils de la Generalitat de Catalunya)
 station, using the public
@@ -30,14 +32,17 @@ Copy `custom_components/fgc` into your Home Assistant
    **Configure** menu and choose "Add a station" / "Remove a station" — no
    need to re-run the setup wizard.
 
-Each station gets one sensor per platform/direction (a single-platform
-terminus gets one sensor; an intermediate station with trains passing in
-both directions gets one sensor per direction, e.g. "FGC Sant Cugat Centre
-→ Barcelona - Plaça Catalunya" and "FGC Sant Cugat Centre → Terrassa
-Nacions Unides"). Each sensor's state is the number of whole minutes until
-the next scheduled departure in that direction. Attributes include the
-line (e.g. `S1`), destination, platform, a stable `direction` label, the
-exact next departure time, and up to four further upcoming departures.
+Each station gets one sensor per platform/direction. A terminus collapses
+down to a single sensor showing time + final destination (some termini
+have two physical tracks — one for arrivals, one for departures — but
+arriving/terminating trains are excluded since they aren't a departure
+you can board). An intermediate station with trains passing in both
+directions gets one sensor per direction, e.g. "FGC Sant Cugat Centre →
+Barcelona - Plaça Catalunya" and "FGC Sant Cugat Centre → Terrassa Nacions
+Unides". Each sensor's state is the number of whole minutes until the next
+scheduled departure in that direction. Attributes include the line (e.g.
+`S1`), destination, platform, a stable `direction` label, the exact next
+departure time, and up to four further upcoming departures.
 
 ## How it works
 

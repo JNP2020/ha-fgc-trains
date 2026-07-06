@@ -24,10 +24,10 @@ from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import CONF_API_KEY, CONF_STATION_CODE, CONF_STATIONS, DOMAIN
 
 
-def _station_options(stations: dict[str, str]) -> list[SelectOptionDict]:
+def _station_options(stations: dict[str, dict]) -> list[SelectOptionDict]:
     return [
-        SelectOptionDict(value=code, label=name)
-        for code, name in sorted(stations.items(), key=lambda kv: kv[1])
+        SelectOptionDict(value=code, label=info["name"])
+        for code, info in sorted(stations.items(), key=lambda kv: kv[1]["name"])
     ]
 
 
@@ -38,7 +38,7 @@ class FgcConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._api_key: str | None = None
-        self._stations: dict[str, str] = {}
+        self._stations: dict[str, dict] = {}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -120,7 +120,7 @@ class FgcOptionsFlow(OptionsFlow):
                 title="", data={**self.config_entry.options, CONF_STATIONS: updated}
             )
 
-        available = {code: name for code, name in stations.items() if code not in current}
+        available = {code: info for code, info in stations.items() if code not in current}
         if not available:
             return self.async_abort(reason="no_stations_available")
 
@@ -151,11 +151,11 @@ class FgcOptionsFlow(OptionsFlow):
                 title="", data={**self.config_entry.options, CONF_STATIONS: updated}
             )
 
-        names = self.hass.data.get(DOMAIN, {}).get(
+        stations = self.hass.data.get(DOMAIN, {}).get(
             self.config_entry.entry_id, {}
-        ).get("station_names", {})
+        ).get("stations", {})
         options = [
-            SelectOptionDict(value=code, label=names.get(code, code))
+            SelectOptionDict(value=code, label=stations.get(code, {}).get("name", code))
             for code in current
         ]
         schema = vol.Schema(
