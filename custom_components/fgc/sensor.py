@@ -20,8 +20,11 @@ from .const import (
     ATTR_DESTINATION,
     ATTR_DIRECTION,
     ATTR_LINE,
+    ATTR_LINE_COLOR,
+    ATTR_LINE_TEXT_COLOR,
     ATTR_NEXT_DEPARTURE,
     ATTR_PLATFORM,
+    ATTR_STATION_CODE,
     ATTR_STATION_NAME,
     ATTR_UPCOMING,
     CONF_STATIONS,
@@ -115,7 +118,10 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        attrs = {ATTR_STATION_NAME: self._station_name}
+        attrs = {
+            ATTR_STATION_NAME: self._station_name,
+            ATTR_STATION_CODE: self._station_code,
+        }
         if self._direction_label:
             attrs[ATTR_DIRECTION] = self._direction_label
         upcoming = self._upcoming
@@ -125,12 +131,16 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
         attrs.update(
             {
                 ATTR_LINE: next_dep["line"],
+                ATTR_LINE_COLOR: next_dep["line_color"],
+                ATTR_LINE_TEXT_COLOR: next_dep["line_text_color"],
                 ATTR_DESTINATION: next_dep["destination"],
                 ATTR_PLATFORM: next_dep["platform"],
                 ATTR_NEXT_DEPARTURE: next_dep["datetime"].isoformat(),
                 ATTR_UPCOMING: [
                     {
                         ATTR_LINE: dep["line"],
+                        ATTR_LINE_COLOR: dep["line_color"],
+                        ATTR_LINE_TEXT_COLOR: dep["line_text_color"],
                         ATTR_DESTINATION: dep["destination"],
                         ATTR_PLATFORM: dep["platform"],
                         ATTR_NEXT_DEPARTURE: dep["datetime"].isoformat(),

@@ -57,6 +57,32 @@ destination, next stops, on-time status, and unit type. Trains that drop
 out of service are marked unavailable rather than removed, since the same
 physical unit typically reappears later in the day.
 
+This can be switched off from the integration's **Configure -> Settings**
+menu ("Show live train positions on the map") if you'd rather not poll the
+position feed every 30 seconds — it's on by default. Turning it off removes
+the train trackers; turning it back on recreates them.
+
+### Timetable card (Geotren-style departure board)
+
+The integration ships a custom Lovelace card, styled after FGC's own
+[Geotren departure boards](https://geotren.fgc.cat/), that shows a live,
+scrolling-style timetable for one station: a colored line badge, the
+destination, minutes remaining, and platform, refreshed every second from
+the station's sensors.
+
+**One-time setup:** Settings -> Dashboards -> ⋮ (top right) -> Resources ->
+Add Resource -> URL `/fgc_static/fgc-timetable-card.js`, type
+**JavaScript Module**. (The integration serves this file itself — no extra
+files to copy anywhere.)
+
+Then add a card to any dashboard:
+
+```yaml
+type: custom:fgc-timetable-card
+station: Sant Cugat Centre   # must match the sensors' station_name attribute exactly
+rows: 4                      # optional, default 4
+```
+
 ## How it works
 
 The `viajes-de-hoy` dataset returns the entire day's static timetable per

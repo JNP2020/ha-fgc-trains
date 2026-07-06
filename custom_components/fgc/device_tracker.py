@@ -32,10 +32,16 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up device trackers for every currently-known train, and keep
-    adding new ones as they appear in later coordinator refreshes."""
-    coordinator: FgcVehicleCoordinator = hass.data[DOMAIN][entry.entry_id][
+    adding new ones as they appear in later coordinator refreshes.
+
+    No-op if the live map has been turned off in the integration's options
+    (`vehicle_coordinator` is None in that case).
+    """
+    coordinator: FgcVehicleCoordinator | None = hass.data[DOMAIN][entry.entry_id][
         "vehicle_coordinator"
     ]
+    if coordinator is None:
+        return
     known_units: set[str] = set()
 
     @callback

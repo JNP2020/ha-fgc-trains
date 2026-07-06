@@ -30,7 +30,8 @@
         "title": "FGC Trains",
         "menu_options": {
           "add_station": "Add a station",
-          "remove_station": "Remove a station"
+          "remove_station": "Remove a station",
+          "settings": "Settings"
         }
       },
       "add_station": {
@@ -43,6 +44,12 @@
         "title": "Remove station(s)",
         "data": {
           "station_code": "Stations to remove"
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "data": {
+          "enable_map": "Show live train positions on the map"
         }
       }
     },

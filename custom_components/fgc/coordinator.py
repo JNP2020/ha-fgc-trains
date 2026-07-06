@@ -40,6 +40,8 @@ class Departure(TypedDict):
 
     datetime: datetime
     line: str | None
+    line_color: str | None
+    line_text_color: str | None
     destination: str
     platform: str | None
     station_name: str | None
@@ -79,6 +81,8 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
             Departure(
                 datetime=dep_dt,
                 line=row.get("route_short_name"),
+                line_color=row.get("route_color"),
+                line_text_color=row.get("route_text_color"),
                 destination=destination,
                 platform=row.get("platform_code"),
                 station_name=stop_name,

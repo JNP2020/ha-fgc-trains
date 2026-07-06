@@ -21,7 +21,13 @@ from homeassistant.helpers.selector import (
 )
 
 from .api import FgcApiClient, FgcApiError, FgcAuthError
-from .const import CONF_API_KEY, CONF_STATION_CODE, CONF_STATIONS, DOMAIN
+from .const import (
+    CONF_API_KEY,
+    CONF_ENABLE_MAP,
+    CONF_STATION_CODE,
+    CONF_STATIONS,
+    DOMAIN,
+)
 
 
 def _station_options(stations: dict[str, dict]) -> list[SelectOptionDict]:
@@ -98,8 +104,28 @@ class FgcOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         return self.async_show_menu(
-            step_id="init", menu_options=["add_station", "remove_station"]
+            step_id="init",
+            menu_options=["add_station", "remove_station", "settings"],
         )
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data={**self.config_entry.options, **user_input},
+            )
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_ENABLE_MAP,
+                    default=self.config_entry.options.get(CONF_ENABLE_MAP, True),
+                ): bool
+            }
+        )
+        return self.async_show_form(step_id="settings", data_schema=schema)
 
     async def async_step_add_station(
         self, user_input: dict[str, Any] | None = None

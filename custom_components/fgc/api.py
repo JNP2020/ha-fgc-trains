@@ -123,7 +123,7 @@ class FgcApiClient:
                 "order_by": "departure_time asc",
                 "select": (
                     "stop_id, departure_time, route_short_name, trip_headsign, "
-                    "platform_code, stop_name"
+                    "platform_code, stop_name, route_color, route_text_color"
                 ),
             },
         )
