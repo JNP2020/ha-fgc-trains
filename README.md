@@ -91,8 +91,13 @@ Then add a card to any dashboard:
 ```yaml
 type: custom:fgc-timetable-card
 station: Sant Cugat Centre   # must match the sensors' station_name attribute exactly
+title: Sant Cugat            # optional, defaults to the station name — shown in the header,
+                              # handy when you have several of these cards on one dashboard
 rows: 4                      # optional, default 4
 ```
+
+A small green dot next to a destination means that row's time is a live
+GTFS-Realtime prediction rather than the static schedule.
 
 ### Ski/mountain resort sensors
 
@@ -140,7 +145,12 @@ usage low regardless of how many stations you add.
 Departure times blend the static schedule with FGC's live GTFS-Realtime
 Trip Updates feed (fetched fleet-wide once per tick, then matched to each
 station's candidate departures), so they reflect real delays/early
-departures where a confident match exists, not just the timetable.
+departures where a confident match exists, not just the timetable. Since
+that feed has no shared trip id to join on, matches are chosen globally by
+best-fit (closest time first across every candidate pair, not just
+earliest-scheduled-first) and deduplicated by line + destination + time,
+so two close-together departures can't end up both matched to the same
+prediction or shown as if the same train appeared twice.
 
 If you see a log warning about the FGC API quota running low, either add
 your own API key in the integration's settings for a higher limit, or turn

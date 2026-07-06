@@ -120,36 +120,86 @@ def _apply_realtime(
     The realtime feed doesn't expose a trip_id shared with the static
     schedule (not selectable through this API), so matching is done per
     stop_id by nearest scheduled-vs-predicted time instead, within
-    `REALTIME_MATCH_MAX_DELTA`. Each predicted time is used at most once so
-    two close-together departures can't both grab the same prediction.
+    `REALTIME_MATCH_MAX_DELTA`.
+
+    Matching is done globally-greedy (best delta first across *all*
+    candidate pairs, not departure-by-departure in schedule order): with two
+    departures close together at the same platform, naively matching the
+    earlier one first can steal the closer prediction from the later one,
+    leaving it stuck on a stale static time and showing what looks like a
+    duplicate/phantom train alongside the (wrongly) realtime-adjusted one.
+    Matching by best-delta-first instead, and each side used at most once,
+    avoids that.
     """
-    # Candidates per stop_id, consumed greedily in scheduled-time order so
-    # the earliest static departure gets first pick of the closest prediction.
-    candidates: dict[str, list[int]] = {
-        stop_id: list(epochs) for stop_id, epochs in realtime_index.items()
-    }
     max_delta = REALTIME_MATCH_MAX_DELTA.total_seconds()
 
+    # Every (departure, prediction) pair at the same stop_id within the
+    # delta window, best matches first.
+    pairs: list[tuple[float, int, int]] = []  # (delta, dep_idx, epoch_idx)
+    epochs_by_stop: dict[str, list[int]] = {}
+    for dep_idx, dep in enumerate(departures):
+        epochs = realtime_index.get(dep["stop_id"])
+        if not epochs:
+            continue
+        epochs_by_stop.setdefault(dep["stop_id"], epochs)
+        scheduled_epoch = dep["datetime"].timestamp()
+        for epoch_idx, epoch in enumerate(epochs):
+            delta = abs(epoch - scheduled_epoch)
+            if delta <= max_delta:
+                pairs.append((delta, dep_idx, epoch_idx))
+    pairs.sort(key=lambda p: p[0])
+
+    matched_epoch: dict[int, int] = {}  # dep_idx -> chosen epoch
+    used_epochs: dict[str, set[int]] = {}  # stop_id -> set of consumed epoch_idx
+    for _delta, dep_idx, epoch_idx in pairs:
+        if dep_idx in matched_epoch:
+            continue
+        stop_id = departures[dep_idx]["stop_id"]
+        used = used_epochs.setdefault(stop_id, set())
+        if epoch_idx in used:
+            continue
+        used.add(epoch_idx)
+        matched_epoch[dep_idx] = epochs_by_stop[stop_id][epoch_idx]
+
     adjusted: list[Departure] = []
-    for dep in departures:
-        pool = candidates.get(dep["stop_id"])
-        if pool:
-            scheduled_epoch = dep["datetime"].timestamp()
-            best_idx, best_delta = None, None
-            for idx, epoch in enumerate(pool):
-                delta = abs(epoch - scheduled_epoch)
-                if delta <= max_delta and (best_delta is None or delta < best_delta):
-                    best_idx, best_delta = idx, delta
-            if best_idx is not None:
-                epoch = pool.pop(best_idx)
-                dep = {
-                    **dep,
-                    "datetime": datetime.fromtimestamp(epoch, tz=tz),
-                    "realtime": True,
-                }
+    for dep_idx, dep in enumerate(departures):
+        epoch = matched_epoch.get(dep_idx)
+        if epoch is not None:
+            dep = {
+                **dep,
+                "datetime": datetime.fromtimestamp(epoch, tz=tz),
+                "realtime": True,
+            }
         adjusted.append(dep)
     adjusted.sort(key=lambda dep: dep["datetime"])
     return adjusted
+
+
+def _dedupe_departures(departures: list[Departure]) -> list[Departure]:
+    """Collapse departures that clearly represent the same physical train.
+
+    A backstop against the realtime overlay (or any upstream data quirk)
+    producing two entries — one static, one realtime-adjusted — for what a
+    rider would perceive as a single train: same line + destination and
+    times within a minute of each other. Keeps the realtime-backed one when
+    there's a choice, since it's the more accurate of the two.
+    """
+    kept: list[Departure] = []
+    for dep in departures:
+        duplicate_idx = None
+        for idx, other in enumerate(kept):
+            if (
+                dep["line"] == other["line"]
+                and dep["destination"] == other["destination"]
+                and abs((dep["datetime"] - other["datetime"]).total_seconds()) < 60
+            ):
+                duplicate_idx = idx
+                break
+        if duplicate_idx is None:
+            kept.append(dep)
+        elif dep["realtime"] and not kept[duplicate_idx]["realtime"]:
+            kept[duplicate_idx] = dep
+    return kept
 
 
 class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]]):
@@ -222,6 +272,7 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
                 if dep["datetime"] >= now - REALTIME_MATCH_MAX_DELTA
             ]
             adjusted = _apply_realtime(candidates, realtime_index, now.tzinfo)
+            adjusted = _dedupe_departures(adjusted)
 
             by_destination: dict[str, list[Departure]] = {}
             for dep in adjusted:

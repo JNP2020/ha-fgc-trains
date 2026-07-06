@@ -9,6 +9,7 @@
  * Card config:
  *   type: custom:fgc-timetable-card
  *   station: Sant Cugat Centre   # must match a sensor's station_name attribute
+ *   title: My Station            # optional, defaults to the station name
  *   rows: 4                      # optional, default 4
  */
 
@@ -16,6 +17,33 @@ const BG = "#000000";
 const YELLOW = "#ffc629";
 const WHITE = "#ffffff";
 const DIVIDER = "rgba(255,255,255,0.12)";
+
+/**
+ * Collapse departures that clearly represent the same physical train (same
+ * line + destination, times within a minute of each other) down to one —
+ * a backstop in case the backend ever exposes both a static and a
+ * realtime-adjusted entry for what a rider would see as a single train.
+ * Prefers the realtime-backed entry when there's a choice.
+ */
+function _dedupeDepartures(departures) {
+  const sorted = [...departures].sort((x, y) => new Date(x.time) - new Date(y.time));
+  const kept = [];
+  for (const dep of sorted) {
+    const time = new Date(dep.time).getTime();
+    const dupIdx = kept.findIndex(
+      (other) =>
+        other.line === dep.line &&
+        other.destination === dep.destination &&
+        Math.abs(new Date(other.time).getTime() - time) < 60000
+    );
+    if (dupIdx === -1) {
+      kept.push(dep);
+    } else if (dep.realtime && !kept[dupIdx].realtime) {
+      kept[dupIdx] = dep;
+    }
+  }
+  return kept;
+}
 
 class FgcTimetableCard extends HTMLElement {
   setConfig(config) {
@@ -73,7 +101,7 @@ class FgcTimetableCard extends HTMLElement {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 14px 16px;
+        padding: 14px 16px 10px;
       }
       .fgc-logo {
         width: 34px;
@@ -81,11 +109,28 @@ class FgcTimetableCard extends HTMLElement {
         border-radius: 6px;
         flex-shrink: 0;
       }
+      .fgc-title-block {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .fgc-station-name {
+        color: ${WHITE};
+        opacity: 0.75;
+        font-size: 0.75em;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
       .fgc-clock {
         color: ${YELLOW};
-        font-size: 1.6em;
+        font-size: 1.5em;
         font-weight: 600;
         letter-spacing: 0.02em;
+        line-height: 1.2;
       }
       .fgc-spacer { flex: 1; }
       .fgc-via-label {
@@ -93,6 +138,7 @@ class FgcTimetableCard extends HTMLElement {
         font-size: 1.1em;
         font-weight: 500;
         padding-right: 4px;
+        opacity: 0.9;
       }
       .fgc-row {
         display: flex;
@@ -156,7 +202,10 @@ class FgcTimetableCard extends HTMLElement {
     wrapper.innerHTML = `
       <div class="fgc-header">
         <img class="fgc-logo" src="/fgc_static/icon.png" alt="FGC">
-        <div class="fgc-clock">--:--</div>
+        <div class="fgc-title-block">
+          <div class="fgc-station-name"></div>
+          <div class="fgc-clock">--:--</div>
+        </div>
         <div class="fgc-spacer"></div>
         <div class="fgc-via-label">Via</div>
       </div>
@@ -170,6 +219,8 @@ class FgcTimetableCard extends HTMLElement {
 
     this._clockEl = wrapper.querySelector(".fgc-clock");
     this._rowsEl = wrapper.querySelector(".fgc-rows");
+    wrapper.querySelector(".fgc-station-name").textContent =
+      this._config.title || this._config.station;
 
     this._tick();
   }
@@ -223,8 +274,7 @@ class FgcTimetableCard extends HTMLElement {
         }
       }
     }
-    departures.sort((x, y) => new Date(x.time) - new Date(y.time));
-    this._departures = departures.slice(0, this._config.rows);
+    this._departures = _dedupeDepartures(departures).slice(0, this._config.rows);
   }
 
   _renderRows() {

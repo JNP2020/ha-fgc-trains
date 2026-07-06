@@ -36,25 +36,28 @@
       },
       "add_station": {
         "title": "Add station(s)",
+        "description": "Pick one or more stations to start monitoring. Each gets its own departure sensor(s).",
         "data": {
           "station_code": "Stations to add"
         }
       },
       "remove_station": {
         "title": "Remove station(s)",
+        "description": "Pick which currently-monitored stations to stop tracking.",
         "data": {
           "station_code": "Stations to remove"
         }
       },
       "settings": {
         "title": "Settings",
+        "description": "Turn optional features on or off. The first two are on by default; the rest are niche extras that are off by default to keep things tidy and save on API requests.",
         "data": {
-          "enable_map": "Show live train positions on the map",
-          "enable_ski": "Show FGC mountain resort status sensors",
-          "enable_air_quality": "Show air quality sensors near your stations",
-          "enable_ski_parking": "Show ski resort parking sensors",
-          "enable_webcams": "Show ski resort webcams as cameras",
-          "enable_carbon_footprint": "Show FGC's yearly carbon footprint sensor"
+          "enable_map": "Live train positions on the map",
+          "enable_ski": "Mountain resort status sensors",
+          "enable_air_quality": "Air quality sensors near your stations",
+          "enable_ski_parking": "Ski resort parking sensors",
+          "enable_webcams": "Ski resort webcams as cameras",
+          "enable_carbon_footprint": "FGC's yearly carbon footprint sensor"
         }
       }
     },
