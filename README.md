@@ -108,6 +108,25 @@ any active service alerts, and a live webcam image URL where available.
 This can also be switched off from **Configure -> Settings** ("Show FGC
 mountain resort status sensors") — on by default.
 
+### Optional extras (all off by default)
+
+A few more FGC open-data feeds are available as opt-in sensors from
+**Configure -> Settings** — off by default since most users won't want the
+extra API calls/entities:
+
+- **Air quality near your stations** — one sensor per *configured* station
+  that has a nearby air-quality reading, state = the official Catalan air
+  quality index (e.g. `MODERAT`), with NO2/O3/PM10 and the source
+  monitoring station as attributes.
+- **Ski resort parking** — one sensor per resort, state = total parking
+  spaces across its facilities, with each facility's name/spaces as an
+  attribute.
+- **Ski resort webcams** — a `camera` entity per currently-active resort
+  webcam, fetching the live still image on demand (not on a schedule).
+- **FGC's yearly carbon footprint** — one sensor, state = total tCO2e for
+  the most recently reported year, with mobility/tourism split and a
+  breakdown by emissions scope as attributes.
+
 ## How it works
 
 The `viajes-de-hoy` dataset returns the entire day's static timetable per

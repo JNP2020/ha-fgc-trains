@@ -12,9 +12,12 @@ from google.transit import gtfs_realtime_pb2
 from .const import (
     API_BASE_URL,
     API_PAGE_SIZE,
+    DATASET_AIR_QUALITY,
+    DATASET_CARBON_FOOTPRINT,
     DATASET_SCHEDULE,
     DATASET_SKI_ALERTS,
     DATASET_SKI_FACILITIES,
+    DATASET_SKI_PARKING,
     DATASET_SKI_WEATHER,
     DATASET_SKI_WEBCAMS,
     DATASET_STOPS,
@@ -266,3 +269,15 @@ class FgcApiClient:
                 if epoch:
                     by_stop.setdefault(stop_time_update.stop_id, []).append(epoch)
         return by_stop
+
+    async def async_get_air_quality(self) -> list[dict[str, Any]]:
+        """Return the latest air-quality reading near every FGC train station."""
+        return await self._get_all_pages(DATASET_AIR_QUALITY, {})
+
+    async def async_get_ski_parking(self) -> list[dict[str, Any]]:
+        """Return every parking facility at every FGC mountain resort."""
+        return await self._get_all_pages(DATASET_SKI_PARKING, {})
+
+    async def async_get_carbon_footprint(self) -> list[dict[str, Any]]:
+        """Return FGC's yearly corporate greenhouse-gas emissions report."""
+        return await self._get_all_pages(DATASET_CARBON_FOOTPRINT, {})

@@ -32,6 +32,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import FgcCoordinator
+from .extra_sensors import AirQualitySensor, CarbonFootprintSensor, SkiParkingSensor
 from .ski_coordinator import SkiCoordinator
 from .ski_sensor import SkiResortSensor
 from .util import slugify
@@ -41,7 +42,8 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up one sensor per destination for each configured station, plus
-    one per ski resort if that feature is enabled.
+    the optional ski/air-quality/parking/carbon-footprint sensors for
+    whichever of those features are enabled.
 
     A station with trains heading to several distinct destinations (e.g. an
     intermediate stop, or a hub terminus spreading lines across platforms)
@@ -75,6 +77,24 @@ async def async_setup_entry(
     if ski_coordinator is not None:
         for resort_name in ski_coordinator.data:
             entities.append(SkiResortSensor(ski_coordinator, entry, resort_name))
+
+    air_quality_coordinator = data.get("air_quality_coordinator")
+    if air_quality_coordinator is not None:
+        for code in entry.options.get(CONF_STATIONS, []):
+            station_name = stations.get(code, {}).get("name", code)
+            if station_name in air_quality_coordinator.data:
+                entities.append(
+                    AirQualitySensor(air_quality_coordinator, entry, code, station_name)
+                )
+
+    ski_parking_coordinator = data.get("ski_parking_coordinator")
+    if ski_parking_coordinator is not None:
+        for resort_name in ski_parking_coordinator.data:
+            entities.append(SkiParkingSensor(ski_parking_coordinator, entry, resort_name))
+
+    carbon_footprint_coordinator = data.get("carbon_footprint_coordinator")
+    if carbon_footprint_coordinator is not None:
+        entities.append(CarbonFootprintSensor(carbon_footprint_coordinator, entry))
 
     async_add_entities(entities)
 

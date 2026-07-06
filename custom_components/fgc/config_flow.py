@@ -23,8 +23,12 @@ from homeassistant.helpers.selector import (
 from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import (
     CONF_API_KEY,
+    CONF_ENABLE_AIR_QUALITY,
+    CONF_ENABLE_CARBON_FOOTPRINT,
     CONF_ENABLE_MAP,
     CONF_ENABLE_SKI,
+    CONF_ENABLE_SKI_PARKING,
+    CONF_ENABLE_WEBCAMS,
     CONF_STATION_CODE,
     CONF_STATIONS,
     DOMAIN,
@@ -118,15 +122,30 @@ class FgcOptionsFlow(OptionsFlow):
                 data={**self.config_entry.options, **user_input},
             )
 
+        options = self.config_entry.options
         schema = vol.Schema(
             {
                 vol.Required(
-                    CONF_ENABLE_MAP,
-                    default=self.config_entry.options.get(CONF_ENABLE_MAP, True),
+                    CONF_ENABLE_MAP, default=options.get(CONF_ENABLE_MAP, True)
                 ): bool,
                 vol.Required(
-                    CONF_ENABLE_SKI,
-                    default=self.config_entry.options.get(CONF_ENABLE_SKI, True),
+                    CONF_ENABLE_SKI, default=options.get(CONF_ENABLE_SKI, True)
+                ): bool,
+                vol.Required(
+                    CONF_ENABLE_AIR_QUALITY,
+                    default=options.get(CONF_ENABLE_AIR_QUALITY, False),
+                ): bool,
+                vol.Required(
+                    CONF_ENABLE_SKI_PARKING,
+                    default=options.get(CONF_ENABLE_SKI_PARKING, False),
+                ): bool,
+                vol.Required(
+                    CONF_ENABLE_WEBCAMS,
+                    default=options.get(CONF_ENABLE_WEBCAMS, False),
+                ): bool,
+                vol.Required(
+                    CONF_ENABLE_CARBON_FOOTPRINT,
+                    default=options.get(CONF_ENABLE_CARBON_FOOTPRINT, False),
                 ): bool,
             }
         )

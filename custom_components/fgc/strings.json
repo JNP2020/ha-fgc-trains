@@ -50,7 +50,11 @@
         "title": "Settings",
         "data": {
           "enable_map": "Show live train positions on the map",
-          "enable_ski": "Show FGC mountain resort status sensors"
+          "enable_ski": "Show FGC mountain resort status sensors",
+          "enable_air_quality": "Show air quality sensors near your stations",
+          "enable_ski_parking": "Show ski resort parking sensors",
+          "enable_webcams": "Show ski resort webcams as cameras",
+          "enable_carbon_footprint": "Show FGC's yearly carbon footprint sensor"
         }
       }
     },

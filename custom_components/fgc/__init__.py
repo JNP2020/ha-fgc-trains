@@ -14,20 +14,30 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import (
     CONF_API_KEY,
+    CONF_ENABLE_AIR_QUALITY,
+    CONF_ENABLE_CARBON_FOOTPRINT,
     CONF_ENABLE_MAP,
     CONF_ENABLE_SKI,
+    CONF_ENABLE_SKI_PARKING,
+    CONF_ENABLE_WEBCAMS,
     CONF_STATIONS,
     DOMAIN,
     FRONTEND_URL_BASE,
 )
 from .coordinator import FgcCoordinator
+from .extra_coordinators import (
+    AirQualityCoordinator,
+    CarbonFootprintCoordinator,
+    SkiParkingCoordinator,
+    WebcamCoordinator,
+)
 from .ski_coordinator import SkiCoordinator
 from .util import slugify
 from .vehicle_coordinator import FgcVehicleCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.DEVICE_TRACKER]
+PLATFORMS = [Platform.SENSOR, Platform.DEVICE_TRACKER, Platform.CAMERA]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -58,11 +68,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ski_coordinator = SkiCoordinator(hass, client)
         await ski_coordinator.async_config_entry_first_refresh()
 
+    # Off by default: niche/low-demand data sources added after the core
+    # feature set, kept opt-in so most users don't pay their (small) API
+    # cost for entities they'll never look at.
+    air_quality_coordinator = None
+    if entry.options.get(CONF_ENABLE_AIR_QUALITY, False):
+        air_quality_coordinator = AirQualityCoordinator(hass, client)
+        await air_quality_coordinator.async_config_entry_first_refresh()
+
+    ski_parking_coordinator = None
+    if entry.options.get(CONF_ENABLE_SKI_PARKING, False):
+        ski_parking_coordinator = SkiParkingCoordinator(hass, client)
+        await ski_parking_coordinator.async_config_entry_first_refresh()
+
+    webcam_coordinator = None
+    if entry.options.get(CONF_ENABLE_WEBCAMS, False):
+        webcam_coordinator = WebcamCoordinator(hass, client)
+        await webcam_coordinator.async_config_entry_first_refresh()
+
+    carbon_footprint_coordinator = None
+    if entry.options.get(CONF_ENABLE_CARBON_FOOTPRINT, False):
+        carbon_footprint_coordinator = CarbonFootprintCoordinator(hass, client)
+        await carbon_footprint_coordinator.async_config_entry_first_refresh()
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
         "vehicle_coordinator": vehicle_coordinator,
         "ski_coordinator": ski_coordinator,
+        "air_quality_coordinator": air_quality_coordinator,
+        "ski_parking_coordinator": ski_parking_coordinator,
+        "webcam_coordinator": webcam_coordinator,
+        "carbon_footprint_coordinator": carbon_footprint_coordinator,
         "client": client,
         "stations": stations,
     }
@@ -72,7 +109,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry,
         coordinator,
         map_enabled=vehicle_coordinator is not None,
+        webcams_enabled=webcam_coordinator is not None,
         ski_coordinator=ski_coordinator,
+        air_quality_coordinator=air_quality_coordinator,
+        ski_parking_coordinator=ski_parking_coordinator,
+        carbon_footprint_coordinator=carbon_footprint_coordinator,
     )
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -115,18 +156,25 @@ def _remove_stale_entities(
     entry: ConfigEntry,
     coordinator: FgcCoordinator,
     map_enabled: bool,
+    webcams_enabled: bool,
     ski_coordinator: SkiCoordinator | None,
+    air_quality_coordinator: AirQualityCoordinator | None,
+    ski_parking_coordinator: SkiParkingCoordinator | None,
+    carbon_footprint_coordinator: CarbonFootprintCoordinator | None,
 ) -> None:
     """Drop entities no longer relevant to the current configuration.
 
-    Departure sensor unique_ids are keyed by station code + destination
-    slug, discovered via `coordinator.destinations` (populated by the first
-    refresh above); ski sensor unique_ids are keyed by resort name, from
-    `ski_coordinator.data` when that feature is enabled. Device trackers
-    (live train positions) have their own unrelated unique_id scheme and
-    lifecycle — while the map is enabled they go unavailable rather than
-    get removed when a unit drops out of the feed, so they're only swept
-    here as a whole when the map is turned off.
+    Each optional feature's sensors have their own unique_id scheme, keyed
+    off whichever of their coordinators is currently non-None (i.e. that
+    feature is enabled) — an entity whose id doesn't show up in any of
+    these is either for a removed station/destination or a feature that's
+    now turned off, either way no longer wanted.
+
+    Device trackers and cameras (live train positions, ski webcams) have
+    unrelated unique_id schemes and their own dynamic lifecycle — while
+    enabled they go unavailable rather than get removed when a unit/webcam
+    drops out of its feed, so each is only swept here as a whole domain
+    when its feature is turned off.
     """
     registry = er.async_get(hass)
     wanted_sensor_ids = {
@@ -138,11 +186,26 @@ def _remove_stale_entities(
         wanted_sensor_ids |= {
             f"{entry.entry_id}_ski_{slugify(name)}" for name in ski_coordinator.data
         }
+    if air_quality_coordinator is not None:
+        wanted_sensor_ids |= {
+            f"{entry.entry_id}_airquality_{code}"
+            for code in entry.options.get(CONF_STATIONS, [])
+        }
+    if ski_parking_coordinator is not None:
+        wanted_sensor_ids |= {
+            f"{entry.entry_id}_skiparking_{slugify(name)}"
+            for name in ski_parking_coordinator.data
+        }
+    if carbon_footprint_coordinator is not None:
+        wanted_sensor_ids.add(f"{entry.entry_id}_carbon_footprint")
+
     for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if entity_entry.domain == "sensor":
             if entity_entry.unique_id not in wanted_sensor_ids:
                 registry.async_remove(entity_entry.entity_id)
         elif entity_entry.domain == "device_tracker" and not map_enabled:
+            registry.async_remove(entity_entry.entity_id)
+        elif entity_entry.domain == "camera" and not webcams_enabled:
             registry.async_remove(entity_entry.entity_id)
 
 
