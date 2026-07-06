@@ -1,6 +1,8 @@
 """Thin async client for the FGC open-data (Opendatasoft Explore v2.1) API."""
 from __future__ import annotations
 
+import json
+import logging
 import re
 from typing import Any, TypedDict
 
@@ -10,11 +12,27 @@ from .const import (
     API_BASE_URL,
     API_PAGE_SIZE,
     DATASET_SCHEDULE,
+    DATASET_SKI_ALERTS,
+    DATASET_SKI_FACILITIES,
+    DATASET_SKI_WEATHER,
+    DATASET_SKI_WEBCAMS,
     DATASET_STOPS,
     DATASET_VEHICLE_POSITIONS,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 _CODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+# Safety net against a runaway pagination loop (e.g. a server bug that never
+# returns a short page). No real dataset here should ever need this many
+# pages; hitting it means something is wrong and we should give up loudly.
+_MAX_PAGES = 100
+
+# Warn once the anonymous/keyed daily quota drops below this fraction
+# remaining, so a user heading towards HTTP 429s gets a clue why before
+# their sensors start failing to refresh.
+_LOW_QUOTA_THRESHOLD = 0.1
 
 
 class StationInfo(TypedDict):
@@ -38,6 +56,7 @@ class FgcApiClient:
     def __init__(self, session: aiohttp.ClientSession, api_key: str | None = None) -> None:
         self._session = session
         self._api_key = api_key or None
+        self._low_quota_warned = False
 
     async def _get(self, dataset: str, params: dict[str, Any]) -> dict[str, Any]:
         headers = {}
@@ -46,7 +65,15 @@ class FgcApiClient:
         url = f"{API_BASE_URL}/{dataset}/records"
         try:
             async with self._session.get(url, params=params, headers=headers) as resp:
-                payload = await resp.json()
+                try:
+                    payload = await resp.json()
+                except (aiohttp.ContentTypeError, ValueError) as err:
+                    # ValueError covers json.JSONDecodeError: a malformed or
+                    # truncated body (e.g. from a flaky upstream) shouldn't
+                    # surface as a raw, unexpected exception type.
+                    raise FgcApiError(
+                        f"FGC API returned an unparsable response (HTTP {resp.status}): {err}"
+                    ) from err
                 if resp.status == 401 or (
                     isinstance(payload, dict) and payload.get("error") == "API key is not valid"
                 ):
@@ -55,9 +82,34 @@ class FgcApiClient:
                     raise FgcApiError(
                         f"FGC API returned HTTP {resp.status}: {payload}"
                     )
+                self._check_rate_limit(resp.headers)
                 return payload
         except aiohttp.ClientError as err:
             raise FgcApiError(f"Error communicating with FGC API: {err}") from err
+
+    def _check_rate_limit(self, headers: Any) -> None:
+        """Warn once when the daily quota is running low, so a user sees a
+        clear reason before refreshes start failing outright."""
+        try:
+            remaining = int(headers["X-RateLimit-Remaining"])
+            limit = int(headers["X-RateLimit-Limit"])
+        except (KeyError, TypeError, ValueError):
+            return
+        if limit <= 0:
+            return
+        low = remaining / limit < _LOW_QUOTA_THRESHOLD
+        if low and not self._low_quota_warned:
+            self._low_quota_warned = True
+            _LOGGER.warning(
+                "FGC open-data API quota running low: %d/%d requests remaining "
+                "today. Consider adding your own API key, removing some "
+                "stations, or turning off the live map/ski sensors "
+                "(Configure -> Settings) to reduce usage.",
+                remaining,
+                limit,
+            )
+        elif not low:
+            self._low_quota_warned = False
 
     async def _get_all_pages(
         self, dataset: str, params: dict[str, Any]
@@ -67,7 +119,7 @@ class FgcApiClient:
         # based on a short/empty page rather than comparing against it.
         results: list[dict[str, Any]] = []
         offset = 0
-        while True:
+        for _ in range(_MAX_PAGES):
             page = await self._get(
                 dataset, {**params, "limit": API_PAGE_SIZE, "offset": offset}
             )
@@ -75,8 +127,11 @@ class FgcApiClient:
             results.extend(rows)
             offset += len(rows)
             if len(rows) < API_PAGE_SIZE:
-                break
-        return results
+                return results
+        raise FgcApiError(
+            f"Gave up paging '{dataset}' after {_MAX_PAGES} pages "
+            f"({len(results)} rows) — the API may be misbehaving."
+        )
 
     async def async_get_stations(self) -> dict[str, StationInfo]:
         """Return a mapping of station code -> {name, stop_ids}.
@@ -147,3 +202,21 @@ class FgcApiClient:
             for row in rows
             if row.get("stop_id") and row.get("stop_name")
         }
+
+    async def async_get_ski_facilities(self) -> list[dict[str, Any]]:
+        """Return the open/closed status of every lift/facility at every
+        FGC-operated ski resort (La Molina, Vall de Núria, Vallter, Espot,
+        Port Ainé, Boí Taüll)."""
+        return await self._get_all_pages(DATASET_SKI_FACILITIES, {})
+
+    async def async_get_ski_weather(self) -> list[dict[str, Any]]:
+        """Return the latest weather reading(s) for each ski resort."""
+        return await self._get_all_pages(DATASET_SKI_WEATHER, {})
+
+    async def async_get_ski_alerts(self) -> list[dict[str, Any]]:
+        """Return every service alert (active or not) for the ski resorts."""
+        return await self._get_all_pages(DATASET_SKI_ALERTS, {})
+
+    async def async_get_ski_webcams(self) -> list[dict[str, Any]]:
+        """Return every webcam entry (active or not) for the ski resorts."""
+        return await self._get_all_pages(DATASET_SKI_WEBCAMS, {})

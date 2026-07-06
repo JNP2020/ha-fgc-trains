@@ -24,6 +24,7 @@ from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import (
     CONF_API_KEY,
     CONF_ENABLE_MAP,
+    CONF_ENABLE_SKI,
     CONF_STATION_CODE,
     CONF_STATIONS,
     DOMAIN,
@@ -122,7 +123,11 @@ class FgcOptionsFlow(OptionsFlow):
                 vol.Required(
                     CONF_ENABLE_MAP,
                     default=self.config_entry.options.get(CONF_ENABLE_MAP, True),
-                ): bool
+                ): bool,
+                vol.Required(
+                    CONF_ENABLE_SKI,
+                    default=self.config_entry.options.get(CONF_ENABLE_SKI, True),
+                ): bool,
             }
         )
         return self.async_show_form(step_id="settings", data_schema=schema)

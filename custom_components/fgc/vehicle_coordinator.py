@@ -72,16 +72,17 @@ class FgcVehicleCoordinator(DataUpdateCoordinator[dict[str, VehiclePosition]]):
         if self._station_names is None:
             try:
                 self._station_names = await self._client.async_get_station_names()
-            except FgcApiError:
-                # Non-fatal: fall back to showing raw codes instead of names.
-                self._station_names = {}
+            except FgcApiError as err:
+                # Non-fatal: fall back to raw codes for this tick and retry
+                # on the next one, rather than permanently giving up.
+                _LOGGER.debug("Could not fetch FGC station names, will retry: %s", err)
 
         try:
             rows = await self._client.async_get_vehicle_positions()
         except FgcApiError as err:
             raise UpdateFailed(f"Error fetching FGC vehicle positions: {err}") from err
 
-        names = self._station_names
+        names = self._station_names or {}
         vehicles: dict[str, VehiclePosition] = {}
         for row in rows:
             unit_id = row.get("ut")

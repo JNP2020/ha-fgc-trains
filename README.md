@@ -83,6 +83,20 @@ station: Sant Cugat Centre   # must match the sensors' station_name attribute ex
 rows: 4                      # optional, default 4
 ```
 
+### Ski/mountain resort sensors
+
+The integration also creates one sensor per FGC-operated mountain resort
+(La Molina, Vall de Núria, Vallter, Espot, Port Ainé, Boí Taüll), state
+`open`/`closed`, using FGC's tourism-facilities open-data feeds (this
+covers the resorts' general lift/facility network, so a resort reads
+`open` in the summer hiking/bike season too, not just during ski season).
+Attributes include how many facilities are currently open out of the
+total, temperature and wind speed from the resort's weather station,
+any active service alerts, and a live webcam image URL where available.
+
+This can also be switched off from **Configure -> Settings** ("Show FGC
+mountain resort status sensors") — on by default.
+
 ## How it works
 
 The `viajes-de-hoy` dataset returns the entire day's static timetable per
@@ -96,3 +110,7 @@ usage low regardless of how many stations you add.
 Note the departure-time sensors reflect the *scheduled* timetable, not
 delay/real-time data, so they won't reflect delays or cancellations — the
 live map, on the other hand, is genuinely real-time vehicle positioning.
+
+If you see a log warning about the FGC API quota running low, either add
+your own API key in the integration's settings for a higher limit, or turn
+off the live map / ski sensors to reduce daily request usage.

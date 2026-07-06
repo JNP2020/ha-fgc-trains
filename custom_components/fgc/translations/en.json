@@ -49,7 +49,8 @@
       "settings": {
         "title": "Settings",
         "data": {
-          "enable_map": "Show live train positions on the map"
+          "enable_map": "Show live train positions on the map",
+          "enable_ski": "Show FGC mountain resort status sensors"
         }
       }
     },

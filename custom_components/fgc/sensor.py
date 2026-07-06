@@ -31,13 +31,16 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import FgcCoordinator
+from .ski_coordinator import SkiCoordinator
+from .ski_sensor import SkiResortSensor
 from .util import slugify
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up one sensor per destination for each configured station.
+    """Set up one sensor per destination for each configured station, plus
+    one per ski resort if that feature is enabled.
 
     A station with trains heading to several distinct destinations (e.g. an
     intermediate stop, or a hub terminus spreading lines across platforms)
@@ -66,6 +69,12 @@ async def async_setup_entry(
                     None if single_destination else destination,
                 )
             )
+
+    ski_coordinator: SkiCoordinator | None = data.get("ski_coordinator")
+    if ski_coordinator is not None:
+        for resort_name in ski_coordinator.data:
+            entities.append(SkiResortSensor(ski_coordinator, entry, resort_name))
+
     async_add_entities(entities)
 
 

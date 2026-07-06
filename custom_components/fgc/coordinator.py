@@ -34,6 +34,12 @@ from .const import DOMAIN, SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
+# Same-day schedule corrections (e.g. a same-day cancellation or an added
+# service) are rare but do happen; refreshing every few hours regardless of
+# the day-rollover check catches those without materially affecting API
+# usage (a handful of extra requests per station per day).
+_CACHE_MAX_AGE = timedelta(hours=3)
+
 
 class Departure(TypedDict):
     """A single upcoming departure."""
@@ -49,6 +55,7 @@ class Departure(TypedDict):
 
 class _CachedSchedule(TypedDict):
     day: date
+    fetched_at: datetime
     departures: list[Departure]
     destinations: list[str]
 
@@ -122,7 +129,12 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
 
         for code in self.station_codes:
             cached = self._schedules.get(code)
-            if cached is None or cached["day"] != today:
+            is_stale = (
+                cached is None
+                or cached["day"] != today
+                or now - cached["fetched_at"] > _CACHE_MAX_AGE
+            )
+            if is_stale:
                 stop_ids = self._stations.get(code, {}).get("stop_ids", [code])
                 try:
                     rows = await self._client.async_get_day_schedule(stop_ids)
@@ -133,6 +145,7 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
                 departures = _parse_departures(rows, today)
                 cached = _CachedSchedule(
                     day=today,
+                    fetched_at=now,
                     departures=departures,
                     destinations=sorted({dep["destination"] for dep in departures}),
                 )
