@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to FGC Open Data",
+        "description": "Optionally provide your own FGC open-data API key for a higher rate limit. Leave blank to use anonymous access.",
+        "data": {
+          "api_key": "API key (optional)"
+        }
+      },
+      "station": {
+        "title": "Choose a station",
+        "description": "Pick the first station to monitor. You can add more later from the integration's Configure options.",
+        "data": {
+          "station_code": "Station"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "The provided API key was rejected.",
+      "cannot_connect": "Could not reach the FGC open-data API."
+    },
+    "abort": {
+      "already_configured": "FGC Trains is already set up. Add or remove stations from its Configure options."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "FGC Trains",
+        "menu_options": {
+          "add_station": "Add a station",
+          "remove_station": "Remove a station"
+        }
+      },
+      "add_station": {
+        "title": "Add station(s)",
+        "data": {
+          "station_code": "Stations to add"
+        }
+      },
+      "remove_station": {
+        "title": "Remove station(s)",
+        "data": {
+          "station_code": "Stations to remove"
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "Could not reach the FGC open-data API.",
+      "no_stations_available": "Every station is already being monitored.",
+      "no_stations_configured": "No stations are currently configured."
+    }
+  }
+}
