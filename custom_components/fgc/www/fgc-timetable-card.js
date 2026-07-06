@@ -120,6 +120,16 @@ class FgcTimetableCard extends HTMLElement {
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .fgc-live-dot {
+        display: inline-block;
+        width: 0.4em;
+        height: 0.4em;
+        margin-left: 0.5em;
+        margin-bottom: 0.15em;
+        border-radius: 50%;
+        background: #4caf50;
+        vertical-align: middle;
+      }
       .fgc-mins {
         flex-shrink: 0;
         color: ${WHITE};
@@ -196,6 +206,7 @@ class FgcTimetableCard extends HTMLElement {
           destination: a.destination,
           platform: a.platform,
           time: a.next_departure,
+          realtime: !!a.realtime,
         });
       }
       if (Array.isArray(a.upcoming)) {
@@ -207,6 +218,7 @@ class FgcTimetableCard extends HTMLElement {
             destination: dep.destination,
             platform: dep.platform,
             time: dep.next_departure,
+            realtime: !!dep.realtime,
           });
         }
       }
@@ -221,7 +233,13 @@ class FgcTimetableCard extends HTMLElement {
 
     if (!this._hass) return;
 
-    if (this._departures.length === 0) {
+    const now = Date.now();
+    // Defensive re-check independent of how fresh the backend data is: a
+    // departure whose time has already passed is never shown, even if it's
+    // still sitting in the last data the entities pushed to us.
+    const visible = this._departures.filter((dep) => new Date(dep.time).getTime() > now);
+
+    if (visible.length === 0) {
       const empty = document.createElement("div");
       empty.className = "fgc-empty";
       empty.textContent = this._noEntitiesFound
@@ -231,8 +249,7 @@ class FgcTimetableCard extends HTMLElement {
       return;
     }
 
-    const now = Date.now();
-    for (const dep of this._departures) {
+    for (const dep of visible) {
       const mins = Math.max(0, Math.round((new Date(dep.time).getTime() - now) / 60000));
       const platform =
         dep.platform !== null && dep.platform !== undefined && dep.platform !== ""
@@ -251,6 +268,13 @@ class FgcTimetableCard extends HTMLElement {
       const dest = document.createElement("div");
       dest.className = "fgc-dest";
       dest.textContent = dep.destination || "";
+      if (dep.realtime) {
+        dest.title = "Live predicted time";
+        const liveDot = document.createElement("span");
+        liveDot.className = "fgc-live-dot";
+        liveDot.title = "Live predicted time";
+        dest.appendChild(liveDot);
+      }
 
       const minsEl = document.createElement("div");
       minsEl.className = "fgc-mins";

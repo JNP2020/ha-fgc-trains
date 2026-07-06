@@ -7,6 +7,7 @@ import re
 from typing import Any, TypedDict
 
 import aiohttp
+from google.transit import gtfs_realtime_pb2
 
 from .const import (
     API_BASE_URL,
@@ -17,6 +18,7 @@ from .const import (
     DATASET_SKI_WEATHER,
     DATASET_SKI_WEBCAMS,
     DATASET_STOPS,
+    DATASET_TRIP_UPDATES,
     DATASET_VEHICLE_POSITIONS,
 )
 
@@ -220,3 +222,47 @@ class FgcApiClient:
     async def async_get_ski_webcams(self) -> list[dict[str, Any]]:
         """Return every webcam entry (active or not) for the ski resorts."""
         return await self._get_all_pages(DATASET_SKI_WEBCAMS, {})
+
+    async def async_get_realtime_departures(self) -> dict[str, list[int]]:
+        """Return stop_id -> a list of live-predicted departure times (Unix
+        epoch seconds), from the GTFS-Realtime Trip Updates feed.
+
+        Unlike the other datasets, this one is a binary protobuf file rather
+        than a JSON records endpoint: first look up its current download
+        URL (the file is republished frequently, and nothing guarantees its
+        id/URL stays stable), then fetch and parse that.
+        """
+        meta = await self._get(DATASET_TRIP_UPDATES, {"limit": 1})
+        results = meta.get("results", [])
+        file_info = results[0].get("file") if results else None
+        file_url = file_info.get("url") if file_info else None
+        if not file_url:
+            raise FgcApiError("GTFS-RT trip-updates feed has no file to download")
+
+        try:
+            async with self._session.get(file_url) as resp:
+                if resp.status != 200:
+                    raise FgcApiError(
+                        f"Could not download GTFS-RT trip updates (HTTP {resp.status})"
+                    )
+                data = await resp.read()
+        except aiohttp.ClientError as err:
+            raise FgcApiError(f"Error downloading GTFS-RT trip updates: {err}") from err
+
+        feed = gtfs_realtime_pb2.FeedMessage()
+        try:
+            feed.ParseFromString(data)
+        except Exception as err:  # noqa: BLE001 - protobuf raises plain Exception/DecodeError
+            raise FgcApiError(f"Could not parse GTFS-RT trip updates: {err}") from err
+
+        by_stop: dict[str, list[int]] = {}
+        for entity in feed.entity:
+            if not entity.HasField("trip_update"):
+                continue
+            for stop_time_update in entity.trip_update.stop_time_update:
+                if not stop_time_update.HasField("departure"):
+                    continue
+                epoch = stop_time_update.departure.time
+                if epoch:
+                    by_stop.setdefault(stop_time_update.stop_id, []).append(epoch)
+        return by_stop

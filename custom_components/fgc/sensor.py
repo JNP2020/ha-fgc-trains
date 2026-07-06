@@ -24,6 +24,7 @@ from .const import (
     ATTR_LINE_TEXT_COLOR,
     ATTR_NEXT_DEPARTURE,
     ATTR_PLATFORM,
+    ATTR_REALTIME,
     ATTR_STATION_CODE,
     ATTR_STATION_NAME,
     ATTR_UPCOMING,
@@ -145,6 +146,7 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
                 ATTR_DESTINATION: next_dep["destination"],
                 ATTR_PLATFORM: next_dep["platform"],
                 ATTR_NEXT_DEPARTURE: next_dep["datetime"].isoformat(),
+                ATTR_REALTIME: next_dep["realtime"],
                 ATTR_UPCOMING: [
                     {
                         ATTR_LINE: dep["line"],
@@ -153,6 +155,7 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
                         ATTR_DESTINATION: dep["destination"],
                         ATTR_PLATFORM: dep["platform"],
                         ATTR_NEXT_DEPARTURE: dep["datetime"].isoformat(),
+                        ATTR_REALTIME: dep["realtime"],
                     }
                     for dep in upcoming[1:]
                 ],

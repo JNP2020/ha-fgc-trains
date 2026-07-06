@@ -6,7 +6,8 @@ Custom Home Assistant integration that reports minutes until the next train
 departure from any FGC (Ferrocarrils de la Generalitat de Catalunya)
 station, using the public
 [FGC open-data API](https://dadesobertes.fgc.cat/api-console/explore/v2.1/catalog/datasets/gtfs_stops/)
-(`viajes-de-hoy` dataset, today's full timetable).
+(today's static timetable, corrected against FGC's live GTFS-Realtime feed
+where available).
 
 ## Install
 
@@ -42,9 +43,19 @@ destination, e.g. "FGC Sant Cugat Centre → Barcelona - Plaça Catalunya" and
 like Plaça Catalunya gets one sensor per line it serves (Sabadell, Terrassa,
 Sarrià, Av. Tibidabo, ...), regardless of which physical platform each
 train happens to use. Each sensor's state is the number of whole minutes
-until the next scheduled departure to that destination. Attributes include
-the line (e.g. `S1`), destination, platform, a stable `direction` label,
-the exact next departure time, and up to four further upcoming departures.
+until the next departure to that destination. Attributes include the line
+(e.g. `S1`), destination, platform, a stable `direction` label, whether
+that time is `realtime` or scheduled, the exact next departure time, and
+up to four further upcoming departures.
+
+Departure times are corrected against FGC's live GTFS-Realtime feed
+whenever a confident match is available (matched by platform and closest
+time, within a 10-minute window, since the realtime feed doesn't expose a
+shared trip id to join on directly) — so a delayed train keeps counting
+down past its scheduled time instead of vanishing, and a train that's
+actually already gone drops off promptly instead of lingering with a
+stale scheduled time. When no realtime match exists, the static scheduled
+time is used, same as before.
 
 ### Live train map
 
@@ -107,9 +118,10 @@ Every 30 seconds it re-filters that cached list against the current time —
 no extra API calls — to recompute "minutes remaining." This keeps API
 usage low regardless of how many stations you add.
 
-Note the departure-time sensors reflect the *scheduled* timetable, not
-delay/real-time data, so they won't reflect delays or cancellations — the
-live map, on the other hand, is genuinely real-time vehicle positioning.
+Departure times blend the static schedule with FGC's live GTFS-Realtime
+Trip Updates feed (fetched fleet-wide once per tick, then matched to each
+station's candidate departures), so they reflect real delays/early
+departures where a confident match exists, not just the timetable.
 
 If you see a log warning about the FGC API quota running low, either add
 your own API key in the integration's settings for a higher limit, or turn

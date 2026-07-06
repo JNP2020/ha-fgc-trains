@@ -6,6 +6,6 @@
   "documentation": "https://dadesobertes.fgc.cat/api-console/explore/v2.1/catalog/datasets/gtfs_stops/",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://dadesobertes.fgc.cat/api-console/explore/v2.1/catalog/datasets/gtfs_stops/",
-  "requirements": [],
-  "version": "2.4.0"
+  "requirements": ["gtfs-realtime-bindings>=1.0.0"],
+  "version": "2.5.0"
 }

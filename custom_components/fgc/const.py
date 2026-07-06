@@ -17,6 +17,7 @@ DATASET_SKI_FACILITIES = "estat-obertura-equipaments-turistics-fgc"
 DATASET_SKI_WEATHER = "meteo-tim"
 DATASET_SKI_ALERTS = "avisos-i-alertes-de-tim"
 DATASET_SKI_WEBCAMS = "webcams-actives-tim"
+DATASET_TRIP_UPDATES = "trip-updates-gtfs_realtime"
 
 # Max rows the Opendatasoft Explore API allows per request.
 API_PAGE_SIZE = 100
@@ -24,6 +25,13 @@ API_PAGE_SIZE = 100
 SCAN_INTERVAL = timedelta(seconds=30)
 VEHICLE_SCAN_INTERVAL = timedelta(seconds=30)
 SKI_SCAN_INTERVAL = timedelta(minutes=10)
+
+# How far a live GTFS-RT predicted departure may drift from the static
+# schedule and still be considered "the same" departure. The realtime feed
+# doesn't share a trip_id with the static schedule (not exposed via this
+# API), so departures are matched by (stop_id, closest time) instead; this
+# bounds how large a mismatch that heuristic can produce.
+REALTIME_MATCH_MAX_DELTA = timedelta(minutes=10)
 
 ATTR_LINE = "line"
 ATTR_LINE_COLOR = "line_color"
@@ -35,6 +43,7 @@ ATTR_STATION_NAME = "station_name"
 ATTR_STATION_CODE = "station_code"
 ATTR_NEXT_DEPARTURE = "next_departure"
 ATTR_UPCOMING = "upcoming"
+ATTR_REALTIME = "realtime"
 
 ATTR_OPEN_FACILITIES = "open_facilities"
 ATTR_TOTAL_FACILITIES = "total_facilities"

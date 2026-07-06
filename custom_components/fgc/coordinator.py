@@ -18,6 +18,13 @@ distinct destination gets its own sensor. Rows where the destination is
 this very stop are trains ending their trip here, not a departure a rider
 could board, so they're dropped rather than turned into a Departure; a
 plain terminus then naturally collapses down to a single destination/sensor.
+
+On top of the static schedule, every tick also fetches FGC's live GTFS-RT
+Trip Updates feed and overlays real predicted departure times where
+available (see `_apply_realtime`) — this is what makes a delayed train
+keep showing up as "still coming" past its scheduled time, and a train
+that actually left early or on time promptly drop off the list instead of
+lingering with a stale scheduled time.
 """
 from __future__ import annotations
 
@@ -30,7 +37,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import FgcApiClient, FgcApiError, StationInfo
-from .const import DOMAIN, SCAN_INTERVAL
+from .const import DOMAIN, REALTIME_MATCH_MAX_DELTA, SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,12 +52,14 @@ class Departure(TypedDict):
     """A single upcoming departure."""
 
     datetime: datetime
+    stop_id: str
     line: str | None
     line_color: str | None
     line_text_color: str | None
     destination: str
     platform: str | None
     station_name: str | None
+    realtime: bool
 
 
 class _CachedSchedule(TypedDict):
@@ -72,7 +81,8 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
         raw_time = row.get("departure_time")
         destination = row.get("trip_headsign")
         stop_name = row.get("stop_name")
-        if not raw_time or not destination:
+        stop_id = row.get("stop_id")
+        if not raw_time or not destination or not stop_id:
             continue
         if destination == stop_name:
             continue
@@ -87,16 +97,59 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
         departures.append(
             Departure(
                 datetime=dep_dt,
+                stop_id=stop_id,
                 line=row.get("route_short_name"),
                 line_color=row.get("route_color"),
                 line_text_color=row.get("route_text_color"),
                 destination=destination,
                 platform=row.get("platform_code"),
                 station_name=stop_name,
+                realtime=False,
             )
         )
     departures.sort(key=lambda dep: dep["datetime"])
     return departures
+
+
+def _apply_realtime(
+    departures: list[Departure], realtime_index: dict[str, list[int]], tz
+) -> list[Departure]:
+    """Overlay live GTFS-RT predicted departure times where a confident match
+    exists, leaving everything else on its static scheduled time.
+
+    The realtime feed doesn't expose a trip_id shared with the static
+    schedule (not selectable through this API), so matching is done per
+    stop_id by nearest scheduled-vs-predicted time instead, within
+    `REALTIME_MATCH_MAX_DELTA`. Each predicted time is used at most once so
+    two close-together departures can't both grab the same prediction.
+    """
+    # Candidates per stop_id, consumed greedily in scheduled-time order so
+    # the earliest static departure gets first pick of the closest prediction.
+    candidates: dict[str, list[int]] = {
+        stop_id: list(epochs) for stop_id, epochs in realtime_index.items()
+    }
+    max_delta = REALTIME_MATCH_MAX_DELTA.total_seconds()
+
+    adjusted: list[Departure] = []
+    for dep in departures:
+        pool = candidates.get(dep["stop_id"])
+        if pool:
+            scheduled_epoch = dep["datetime"].timestamp()
+            best_idx, best_delta = None, None
+            for idx, epoch in enumerate(pool):
+                delta = abs(epoch - scheduled_epoch)
+                if delta <= max_delta and (best_delta is None or delta < best_delta):
+                    best_idx, best_delta = idx, delta
+            if best_idx is not None:
+                epoch = pool.pop(best_idx)
+                dep = {
+                    **dep,
+                    "datetime": datetime.fromtimestamp(epoch, tz=tz),
+                    "realtime": True,
+                }
+        adjusted.append(dep)
+    adjusted.sort(key=lambda dep: dep["datetime"])
+    return adjusted
 
 
 class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]]):
@@ -127,6 +180,14 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
         today = now.date()
         result: dict[str, dict[str, list[Departure]]] = {}
 
+        try:
+            realtime_index = await self._client.async_get_realtime_departures()
+        except FgcApiError as err:
+            # Non-fatal: fall back to the static schedule for this tick, as
+            # if no realtime data existed at all.
+            _LOGGER.debug("Could not fetch realtime departures, using schedule only: %s", err)
+            realtime_index = {}
+
         for code in self.station_codes:
             cached = self._schedules.get(code)
             is_stale = (
@@ -152,8 +213,18 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
                 self._schedules[code] = cached
                 self.destinations[code] = cached["destinations"]
 
+            # Widen the pre-filter so a delayed train whose *scheduled* time
+            # has already passed is still considered — realtime matching
+            # below may reveal it hasn't actually left yet.
+            candidates = [
+                dep
+                for dep in cached["departures"]
+                if dep["datetime"] >= now - REALTIME_MATCH_MAX_DELTA
+            ]
+            adjusted = _apply_realtime(candidates, realtime_index, now.tzinfo)
+
             by_destination: dict[str, list[Departure]] = {}
-            for dep in cached["departures"]:
+            for dep in adjusted:
                 if dep["datetime"] >= now:
                     by_destination.setdefault(dep["destination"], []).append(dep)
             result[code] = {
