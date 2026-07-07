@@ -203,3 +203,8 @@ The board-image camera (used for the home screen widget) is rendered with
 [Pillow](https://python-pillow.org/) using the bundled
 [Roboto](https://github.com/googlefonts/roboto-2) font (Apache License 2.0,
 see `custom_components/fgc/fonts/LICENSE.txt`).
+
+## License
+
+[MIT](LICENSE). Not currently listed in the HACS default store — install
+it as a HACS custom repository (see Install above).
