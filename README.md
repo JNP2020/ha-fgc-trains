@@ -1,5 +1,9 @@
 # FGC Trains for Home Assistant
 
+[![Hassfest](https://github.com/JNP2020/ha-fgc-trains/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/JNP2020/ha-fgc-trains/actions/workflows/hassfest.yaml)
+[![HACS validation](https://github.com/JNP2020/ha-fgc-trains/actions/workflows/hacs.yaml/badge.svg)](https://github.com/JNP2020/ha-fgc-trains/actions/workflows/hacs.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 <img src="custom_components/fgc/logo.png" alt="FGC logo" width="180">
 
 *The FGC logo above is used only to identify the transit network this
