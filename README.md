@@ -28,6 +28,16 @@ where available).
 Copy `custom_components/fgc` into your Home Assistant
 `config/custom_components/` directory, then restart Home Assistant.
 
+## Language
+
+The setup wizard and Configure menu are translated into English, Catalan
+(`ca`), and Aranese (`oc-aranes`) — matching the two co-official languages
+of the area FGC serves (Catalan, and Aranese in Val d'Aran), alongside
+English. Home Assistant picks the translation matching your instance's
+configured language automatically; everything else falls back to English.
+The Aranese translation is a good-faith effort rather than a native
+speaker's — corrections via a PR are welcome.
+
 ## Setup
 
 1. **Settings -> Devices & Services -> Add Integration -> FGC Trains.**

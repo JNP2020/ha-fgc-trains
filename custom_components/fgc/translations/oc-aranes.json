@@ -1,0 +1,71 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connècta damb es Dades Ubèrtes d'FGC",
+        "description": "Opcionaument, apòrta era tua pròpia clau API de dades ubèrtes d'FGC entà un limit de sollicituds mès nauta. Dèisha-lo en blanc entà emplegar accès anonim.",
+        "data": {
+          "api_key": "Clau API (opcionau)"
+        }
+      },
+      "station": {
+        "title": "Tria ua estacion",
+        "description": "Tria era prumèra estacion a susvelhar. Mès endavant ne poiràs apondre mès des des opcions de Configuracion dera integracion.",
+        "data": {
+          "station_code": "Estacion"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Era clau API aportada a estat regetada.",
+      "cannot_connect": "No s'a pogut connectar damb era API de dades ubèrtes d'FGC."
+    },
+    "abort": {
+      "already_configured": "FGC Trens ja ei configurat. Ajusta o lheva estacions des des sues opcions de Configuracion."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "FGC Trens",
+        "menu_options": {
+          "add_station": "Apondre ua estacion",
+          "remove_station": "Lheva ua estacion",
+          "settings": "Configuracion"
+        }
+      },
+      "add_station": {
+        "title": "Apondre estacion(s)",
+        "description": "Tria ua o mès estacions entà començar a susvelhar-les. Cada ua aurà es sòns pròpis sensors de sortida.",
+        "data": {
+          "station_code": "Estacions a apondre"
+        }
+      },
+      "remove_station": {
+        "title": "Lheva estacion(s)",
+        "description": "Tria quinas estacions actuaument susvelhades vòs deishar de seguir.",
+        "data": {
+          "station_code": "Estacions a lheva"
+        }
+      },
+      "settings": {
+        "title": "Configuracion",
+        "description": "Activa o desactiva foncions opcionaus. Es tres prumères son activades per defècte; era rèsta son extras especifics desactivats per defècte entà mantier-lo ordenat e estauviar sollicituds ara API.",
+        "data": {
+          "enable_map": "Posicions des trens en dirècte sus eth mapa",
+          "enable_ski": "Sensors d'estat des estacions de montanha",
+          "enable_alerts": "Sensor d'avisi de servici",
+          "enable_air_quality": "Sensors de qualitat der aire près des tues estacions",
+          "enable_ski_parking": "Sensors d'aparcament des estacions d'esquí",
+          "enable_webcams": "Webcams des estacions d'esquí coma càmeres",
+          "enable_carbon_footprint": "Sensor dera emprenta de carbòni anuau d'FGC"
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "No s'a pogut connectar damb era API de dades ubèrtes d'FGC.",
+      "no_stations_available": "Totes es estacions ja son estant susvelhades.",
+      "no_stations_configured": "Actuaument non i a cap estacion configurada."
+    }
+  }
+}

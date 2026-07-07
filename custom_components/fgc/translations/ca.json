@@ -1,0 +1,71 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connecta amb les Dades Obertes d'FGC",
+        "description": "Opcionalment, proporciona la teva pròpia clau API de dades obertes d'FGC per obtenir un límit de peticions més alt. Deixa-ho en blanc per fer servir accés anònim.",
+        "data": {
+          "api_key": "Clau API (opcional)"
+        }
+      },
+      "station": {
+        "title": "Tria una estació",
+        "description": "Tria la primera estació a monitorar. Més endavant en podràs afegir més des de les opcions de Configurar de la integració.",
+        "data": {
+          "station_code": "Estació"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "La clau API proporcionada ha estat rebutjada.",
+      "cannot_connect": "No s'ha pogut connectar amb l'API de dades obertes d'FGC."
+    },
+    "abort": {
+      "already_configured": "FGC Trens ja està configurat. Afegeix o elimina estacions des de les seves opcions de Configurar."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "FGC Trens",
+        "menu_options": {
+          "add_station": "Afegir una estació",
+          "remove_station": "Eliminar una estació",
+          "settings": "Configuració"
+        }
+      },
+      "add_station": {
+        "title": "Afegir estació/ons",
+        "description": "Tria una o més estacions per començar a monitorar-les. Cadascuna tindrà els seus propis sensors de sortida.",
+        "data": {
+          "station_code": "Estacions a afegir"
+        }
+      },
+      "remove_station": {
+        "title": "Eliminar estació/ons",
+        "description": "Tria quines estacions monitorades actualment vols deixar de seguir.",
+        "data": {
+          "station_code": "Estacions a eliminar"
+        }
+      },
+      "settings": {
+        "title": "Configuració",
+        "description": "Activa o desactiva funcions opcionals. Les tres primeres estan activades per defecte; la resta són extres específics desactivats per defecte per mantenir-ho endreçat i estalviar peticions a l'API.",
+        "data": {
+          "enable_map": "Posicions dels trens en directe al mapa",
+          "enable_ski": "Sensors d'estat de les estacions de muntanya",
+          "enable_alerts": "Sensor d'avisos de servei",
+          "enable_air_quality": "Sensors de qualitat de l'aire a prop de les teves estacions",
+          "enable_ski_parking": "Sensors d'aparcament de les estacions d'esquí",
+          "enable_webcams": "Webcams de les estacions d'esquí com a càmeres",
+          "enable_carbon_footprint": "Sensor de la petjada de carboni anual d'FGC"
+        }
+      }
+    },
+    "abort": {
+      "cannot_connect": "No s'ha pogut connectar amb l'API de dades obertes d'FGC.",
+      "no_stations_available": "Totes les estacions ja estan sent monitorades.",
+      "no_stations_configured": "Actualment no hi ha cap estació configurada."
+    }
+  }
+}
