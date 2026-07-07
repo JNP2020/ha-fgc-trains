@@ -25,6 +25,11 @@ available (see `_apply_realtime`) — this is what makes a delayed train
 keep showing up as "still coming" past its scheduled time, and a train
 that actually left early or on time promptly drop off the list instead of
 lingering with a stale scheduled time.
+
+That realtime feed is skipped outside of service hours (see `is_quiet`):
+overnight, with no configured station's next departure due soon, it has
+nothing new to report, so there's no point spending an API call on it
+every 30 seconds until service is about to resume.
 """
 from __future__ import annotations
 
@@ -38,7 +43,12 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import FgcApiClient, FgcApiError, FgcAuthError, StationInfo
-from .const import DOMAIN, REALTIME_MATCH_MAX_DELTA, SCAN_INTERVAL
+from .const import (
+    DOMAIN,
+    QUIET_HOURS_RESUME_BUFFER,
+    REALTIME_MATCH_MAX_DELTA,
+    SCAN_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -231,14 +241,9 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
         today = now.date()
         result: dict[str, dict[str, list[Departure]]] = {}
 
-        try:
-            realtime_index = await self._client.async_get_realtime_departures()
-        except FgcApiError as err:
-            # Non-fatal: fall back to the static schedule for this tick, as
-            # if no realtime data existed at all.
-            _LOGGER.debug("Could not fetch realtime departures, using schedule only: %s", err)
-            realtime_index = {}
-
+        # Refresh any stale per-station schedule cache first: besides being
+        # needed below, this is also what `is_quiet` relies on to know when
+        # the next service day's first departure is.
         for code in self.station_codes:
             cached = self._schedules.get(code)
             is_stale = (
@@ -266,6 +271,26 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
                 self._schedules[code] = cached
                 self.destinations[code] = cached["destinations"]
 
+        # The realtime feed is fleet-wide and has nothing useful to say
+        # while no configured station has a departure due soon, so it's
+        # skipped during that gap rather than polled every tick for
+        # nothing — see `is_quiet`.
+        if self.is_quiet(now):
+            realtime_index: dict[str, list[int]] = {}
+        else:
+            try:
+                realtime_index = await self._client.async_get_realtime_departures()
+            except FgcApiError as err:
+                # Non-fatal: fall back to the static schedule for this tick,
+                # as if no realtime data existed at all.
+                _LOGGER.debug(
+                    "Could not fetch realtime departures, using schedule only: %s", err
+                )
+                realtime_index = {}
+
+        for code in self.station_codes:
+            cached = self._schedules[code]
+
             # Widen the pre-filter so a delayed train whose *scheduled* time
             # has already passed is still considered — realtime matching
             # below may reveal it hasn't actually left yet.
@@ -286,6 +311,30 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
             }
 
         return result
+
+    def is_quiet(self, now: datetime) -> bool:
+        """Whether `now` falls in a known service gap — before any
+        configured station's next scheduled departure, minus a resume
+        buffer — where the realtime/live-position feeds have nothing new
+        to report since no train is running yet.
+
+        Cheap and side-effect-free: only looks at already-cached per-station
+        schedules, so it's safe to call from other coordinators too (e.g.
+        the live map) without triggering any API calls of its own. Errs
+        towards "quiet" when a next departure isn't known yet (e.g. late at
+        night, before the new day's schedule has been fetched) rather than
+        polling needlessly on the assumption service might resume any moment.
+        """
+        next_departure = min(
+            (
+                dep["datetime"]
+                for cached in self._schedules.values()
+                for dep in cached["departures"]
+                if dep["datetime"] >= now
+            ),
+            default=None,
+        )
+        return next_departure is None or now < next_departure - QUIET_HOURS_RESUME_BUFFER
 
     def get_board(self, station_code: str) -> list[Departure]:
         """Return every destination's upcoming departures for one station,

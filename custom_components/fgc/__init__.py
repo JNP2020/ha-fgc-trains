@@ -5,6 +5,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -16,6 +17,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .alerts_coordinator import AlertsCoordinator
 from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import (
+    CARD_JS_FILENAME,
     CONF_API_KEY,
     CONF_ENABLE_AIR_QUALITY,
     CONF_ENABLE_ALERTS,
@@ -63,7 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     vehicle_coordinator = (
-        FgcVehicleCoordinator(hass, client)
+        FgcVehicleCoordinator(hass, client, coordinator)
         if entry.options.get(CONF_ENABLE_MAP, True)
         else None
     )
@@ -181,11 +183,13 @@ async def _first_refresh_non_blocking(
 
 
 async def _async_register_frontend_resources(hass: HomeAssistant) -> None:
-    """Serve custom_components/fgc/www/ at FRONTEND_URL_BASE, once per run.
+    """Serve custom_components/fgc/www/ at FRONTEND_URL_BASE and register the
+    timetable card as a Lovelace resource automatically, once per run.
 
     This lets the fgc-timetable-card.js Lovelace card be added from any
-    dashboard without a HACS "plugin" repo — the integration serves its own
-    static file directly.
+    dashboard without a HACS "plugin" repo (the integration serves its own
+    static file directly) and without the user having to add it by hand
+    under Settings -> Dashboards -> Resources.
     """
     if hass.data.get(DOMAIN, {}).get("_frontend_registered"):
         return
@@ -200,6 +204,7 @@ async def _async_register_frontend_resources(hass: HomeAssistant) -> None:
             )
         except ImportError:
             hass.http.register_static_path(FRONTEND_URL_BASE, www_dir, False)
+        add_extra_js_url(hass, f"{FRONTEND_URL_BASE}/{CARD_JS_FILENAME}")
     except Exception:  # noqa: BLE001 - never let a card-serving hiccup break setup
         _LOGGER.warning(
             "Could not register the fgc-timetable-card frontend resource; "

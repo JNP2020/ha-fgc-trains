@@ -80,3 +80,8 @@ ATTR_TOURISM_EMISSIONS = "tourism_emissions_tco2e"
 ATTR_EMISSIONS_BY_SCOPE = "emissions_by_scope"
 
 FRONTEND_URL_BASE = "/fgc_static"
+CARD_JS_FILENAME = "fgc-timetable-card.js"
+
+# How long before a station's next scheduled departure to resume live
+# realtime-feed/vehicle-position polling after a quiet (no-service) period.
+QUIET_HOURS_RESUME_BUFFER = timedelta(minutes=5)

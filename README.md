@@ -120,12 +120,9 @@ scrolling-style timetable for one station: a colored line badge, the
 destination, minutes remaining, and platform, refreshed every second from
 the station's sensors.
 
-**One-time setup:** Settings -> Dashboards -> ⋮ (top right) -> Resources ->
-Add Resource -> URL `/fgc_static/fgc-timetable-card.js`, type
-**JavaScript Module**. (The integration serves this file itself — no extra
-files to copy anywhere.)
-
-Then add a card to any dashboard:
+No setup needed — the integration registers the card as a Lovelace resource
+automatically (nothing to add under Settings -> Dashboards -> Resources).
+Just add a card to any dashboard:
 
 ```yaml
 type: custom:fgc-timetable-card
@@ -217,6 +214,16 @@ best-fit (closest time first across every candidate pair, not just
 earliest-scheduled-first) and deduplicated by line + destination + time,
 so two close-together departures can't end up both matched to the same
 prediction or shown as if the same train appeared twice.
+
+Both the realtime feed and the live map's position feed are network-wide
+(not per-station) and normally polled every 30 seconds — but neither has
+anything new to report while no train is running, so the integration goes
+quiet overnight rather than polling for nothing: it already knows, from
+each configured station's cached daily timetable, when the next scheduled
+departure is, and skips both feeds' API calls until 5 minutes before it.
+The departure sensors keep showing that first scheduled train the whole
+time (it was already in yesterday's cached schedule) — only the live
+polling pauses, not the data.
 
 If you see a log warning about the FGC API quota running low, either add
 your own API key in the integration's settings for a higher limit, or turn

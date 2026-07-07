@@ -6,6 +6,10 @@ this polls frequently and never caches across ticks. Station codes referenced
 by the feed (origin/destination/next stops) are translated to display names
 using a separate, effectively-static lookup fetched once and kept for the
 life of the coordinator.
+
+Like the realtime departures feed, this is skipped during known service
+gaps (see `FgcCoordinator.is_quiet`) — overnight, with no train running,
+there's nothing for a fleet-wide position poll to find.
 """
 from __future__ import annotations
 
@@ -16,9 +20,11 @@ from typing import TypedDict
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import DOMAIN, VEHICLE_SCAN_INTERVAL
+from .coordinator import FgcCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,14 +68,23 @@ def _parse_next_stops(raw: str | None) -> list[str]:
 class FgcVehicleCoordinator(DataUpdateCoordinator[dict[str, VehiclePosition]]):
     """Coordinator that keeps the latest position of every active train."""
 
-    def __init__(self, hass: HomeAssistant, client: FgcApiClient) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        client: FgcApiClient,
+        schedule_coordinator: FgcCoordinator,
+    ) -> None:
         super().__init__(
             hass, _LOGGER, name=f"{DOMAIN}_vehicles", update_interval=VEHICLE_SCAN_INTERVAL
         )
         self._client = client
+        self._schedule_coordinator = schedule_coordinator
         self._station_names: dict[str, str] | None = None
 
     async def _async_update_data(self) -> dict[str, VehiclePosition]:
+        if self._schedule_coordinator.is_quiet(dt_util.now()):
+            return self.data or {}
+
         if self._station_names is None:
             try:
                 self._station_names = await self._client.async_get_station_names()
