@@ -79,10 +79,4 @@ ATTR_MOBILITY_EMISSIONS = "mobility_emissions_tco2e"
 ATTR_TOURISM_EMISSIONS = "tourism_emissions_tco2e"
 ATTR_EMISSIONS_BY_SCOPE = "emissions_by_scope"
 
-ATTR_SEVERITY = "severity"
-ATTR_ALERT_TYPE = "alert_type"
-ATTR_VALID_FROM = "valid_from"
-ATTR_VALID_UNTIL = "valid_until"
-
 FRONTEND_URL_BASE = "/fgc_static"
-CARD_JS_FILENAME = "fgc-timetable-card.js"

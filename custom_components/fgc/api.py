@@ -1,7 +1,6 @@
 """Thin async client for the FGC open-data (Opendatasoft Explore v2.1) API."""
 from __future__ import annotations
 
-import json
 import logging
 import re
 from typing import Any, TypedDict

@@ -23,7 +23,11 @@ from .const import (
     ATTR_YEAR,
     DOMAIN,
 )
-from .extra_coordinators import AirQualityCoordinator, CarbonFootprintCoordinator, SkiParkingCoordinator
+from .extra_coordinators import (
+    AirQualityCoordinator,
+    CarbonFootprintCoordinator,
+    SkiParkingCoordinator,
+)
 from .util import slugify
 
 
