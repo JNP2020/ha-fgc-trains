@@ -14,6 +14,13 @@
         "data": {
           "station_code": "Estació"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reconnecta FGC Trens",
+        "description": "La teva clau API de dades obertes d'FGC ha deixat de funcionar. Introdueix-ne una de nova, o deixa-ho en blanc per tornar a l'accés anònim.",
+        "data": {
+          "api_key": "Clau API (opcional)"
+        }
       }
     },
     "error": {
@@ -21,7 +28,8 @@
       "cannot_connect": "No s'ha pogut connectar amb l'API de dades obertes d'FGC."
     },
     "abort": {
-      "already_configured": "FGC Trens ja està configurat. Afegeix o elimina estacions des de les seves opcions de Configurar."
+      "already_configured": "FGC Trens ja està configurat. Afegeix o elimina estacions des de les seves opcions de Configurar.",
+      "reauth_successful": "Reconnexió correcta."
     }
   },
   "options": {
@@ -31,7 +39,15 @@
         "menu_options": {
           "add_station": "Afegir una estació",
           "remove_station": "Eliminar una estació",
+          "api_key": "Actualitzar la clau API",
           "settings": "Configuració"
+        }
+      },
+      "api_key": {
+        "title": "Actualitzar la clau API",
+        "description": "Substitueix la clau API de dades obertes d'FGC utilitzada per aquesta integració. Deixa-ho en blanc per canviar a accés anònim.",
+        "data": {
+          "api_key": "Clau API (opcional)"
         }
       },
       "add_station": {

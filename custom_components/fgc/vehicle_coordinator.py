@@ -14,9 +14,10 @@ import logging
 from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import FgcApiClient, FgcApiError
+from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import DOMAIN, VEHICLE_SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,6 +80,8 @@ class FgcVehicleCoordinator(DataUpdateCoordinator[dict[str, VehiclePosition]]):
 
         try:
             rows = await self._client.async_get_vehicle_positions()
+        except FgcAuthError as err:
+            raise ConfigEntryAuthFailed("Invalid FGC API key") from err
         except FgcApiError as err:
             raise UpdateFailed(f"Error fetching FGC vehicle positions: {err}") from err
 

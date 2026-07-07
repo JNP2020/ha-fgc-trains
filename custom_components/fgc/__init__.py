@@ -1,6 +1,7 @@
 """The FGC Trains integration."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .alerts_coordinator import AlertsCoordinator
 from .api import FgcApiClient, FgcApiError, FgcAuthError
@@ -60,43 +62,64 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = FgcCoordinator(hass, client, stations, station_codes)
     await coordinator.async_config_entry_first_refresh()
 
-    vehicle_coordinator = None
-    if entry.options.get(CONF_ENABLE_MAP, True):
-        vehicle_coordinator = FgcVehicleCoordinator(hass, client)
-        await vehicle_coordinator.async_config_entry_first_refresh()
-
-    ski_coordinator = None
-    if entry.options.get(CONF_ENABLE_SKI, True):
-        ski_coordinator = SkiCoordinator(hass, client)
-        await ski_coordinator.async_config_entry_first_refresh()
-
-    alerts_coordinator = None
-    if entry.options.get(CONF_ENABLE_ALERTS, True):
-        alerts_coordinator = AlertsCoordinator(hass, client)
-        await alerts_coordinator.async_config_entry_first_refresh()
-
+    vehicle_coordinator = (
+        FgcVehicleCoordinator(hass, client)
+        if entry.options.get(CONF_ENABLE_MAP, True)
+        else None
+    )
+    ski_coordinator = (
+        SkiCoordinator(hass, client) if entry.options.get(CONF_ENABLE_SKI, True) else None
+    )
+    alerts_coordinator = (
+        AlertsCoordinator(hass, client)
+        if entry.options.get(CONF_ENABLE_ALERTS, True)
+        else None
+    )
     # Off by default: niche/low-demand data sources added after the core
     # feature set, kept opt-in so most users don't pay their (small) API
     # cost for entities they'll never look at.
-    air_quality_coordinator = None
-    if entry.options.get(CONF_ENABLE_AIR_QUALITY, False):
-        air_quality_coordinator = AirQualityCoordinator(hass, client)
-        await air_quality_coordinator.async_config_entry_first_refresh()
+    air_quality_coordinator = (
+        AirQualityCoordinator(hass, client)
+        if entry.options.get(CONF_ENABLE_AIR_QUALITY, False)
+        else None
+    )
+    ski_parking_coordinator = (
+        SkiParkingCoordinator(hass, client)
+        if entry.options.get(CONF_ENABLE_SKI_PARKING, False)
+        else None
+    )
+    webcam_coordinator = (
+        WebcamCoordinator(hass, client)
+        if entry.options.get(CONF_ENABLE_WEBCAMS, False)
+        else None
+    )
+    carbon_footprint_coordinator = (
+        CarbonFootprintCoordinator(hass, client)
+        if entry.options.get(CONF_ENABLE_CARBON_FOOTPRINT, False)
+        else None
+    )
 
-    ski_parking_coordinator = None
-    if entry.options.get(CONF_ENABLE_SKI_PARKING, False):
-        ski_parking_coordinator = SkiParkingCoordinator(hass, client)
-        await ski_parking_coordinator.async_config_entry_first_refresh()
-
-    webcam_coordinator = None
-    if entry.options.get(CONF_ENABLE_WEBCAMS, False):
-        webcam_coordinator = WebcamCoordinator(hass, client)
-        await webcam_coordinator.async_config_entry_first_refresh()
-
-    carbon_footprint_coordinator = None
-    if entry.options.get(CONF_ENABLE_CARBON_FOOTPRINT, False):
-        carbon_footprint_coordinator = CarbonFootprintCoordinator(hass, client)
-        await carbon_footprint_coordinator.async_config_entry_first_refresh()
+    # These are all secondary to the core departure-tracking feature, so a
+    # hiccup fetching any one of them shouldn't stop the whole integration
+    # (including the departure sensors) from loading — each just retries on
+    # its own normal schedule instead. Refreshed concurrently since they're
+    # independent of each other and of varying speed (e.g. the ski bundle
+    # makes four separate API calls).
+    await asyncio.gather(
+        *(
+            _first_refresh_non_blocking(name, opt_coordinator, empty_default)
+            for name, opt_coordinator, empty_default in (
+                ("live map", vehicle_coordinator, {}),
+                ("ski resorts", ski_coordinator, {}),
+                ("service alerts", alerts_coordinator, []),
+                ("air quality", air_quality_coordinator, {}),
+                ("ski parking", ski_parking_coordinator, {}),
+                ("webcams", webcam_coordinator, {}),
+                ("carbon footprint", carbon_footprint_coordinator, None),
+            )
+            if opt_coordinator is not None
+        )
+    )
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
@@ -128,6 +151,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+async def _first_refresh_non_blocking(
+    name: str, coordinator: DataUpdateCoordinator, empty_default
+) -> None:
+    """Do an optional coordinator's first refresh without letting a failure
+    block the rest of setup (including the core departure sensors) — it'll
+    just retry on its own schedule instead.
+
+    `DataUpdateCoordinator.async_config_entry_first_refresh` raises
+    `ConfigEntryNotReady` on failure, which is right for the primary data
+    source but wrong for these secondary features. If it fails before ever
+    succeeding, `coordinator.data` is left as `None`; the platform setup
+    code that iterates it (sensor.py/camera.py/device_tracker.py) expects
+    an empty-but-iterable value instead, hence `empty_default`.
+    """
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except ConfigEntryNotReady:
+        _LOGGER.warning(
+            "Initial refresh of %s failed; it will keep retrying on its own "
+            "schedule instead of blocking the rest of the integration from "
+            "loading.",
+            name,
+        )
+        if coordinator.data is None:
+            coordinator.data = empty_default
 
 
 async def _async_register_frontend_resources(hass: HomeAssistant) -> None:

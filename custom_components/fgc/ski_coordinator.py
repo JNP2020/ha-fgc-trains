@@ -13,9 +13,10 @@ import logging
 from typing import TypedDict
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import FgcApiClient, FgcApiError
+from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import DOMAIN, SKI_SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,6 +65,8 @@ class SkiCoordinator(DataUpdateCoordinator[dict[str, SkiResort]]):
             weather = await self._client.async_get_ski_weather()
             alerts = await self._client.async_get_ski_alerts()
             webcams = await self._client.async_get_ski_webcams()
+        except FgcAuthError as err:
+            raise ConfigEntryAuthFailed("Invalid FGC API key") from err
         except FgcApiError as err:
             raise UpdateFailed(f"Error fetching FGC ski resort data: {err}") from err
 

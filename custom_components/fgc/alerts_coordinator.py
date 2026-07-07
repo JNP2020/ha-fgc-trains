@@ -13,10 +13,11 @@ from datetime import datetime
 from typing import TypedDict
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import FgcApiClient, FgcApiError
+from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import ALERTS_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,6 +53,8 @@ class AlertsCoordinator(DataUpdateCoordinator[list[ServiceAlert]]):
     async def _async_update_data(self) -> list[ServiceAlert]:
         try:
             rows = await self._client.async_get_service_alerts()
+        except FgcAuthError as err:
+            raise ConfigEntryAuthFailed("Invalid FGC API key") from err
         except FgcApiError as err:
             raise UpdateFailed(f"Error fetching FGC service alerts: {err}") from err
 

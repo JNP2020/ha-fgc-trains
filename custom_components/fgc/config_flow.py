@@ -43,6 +43,18 @@ def _station_options(stations: dict[str, dict]) -> list[SelectOptionDict]:
     ]
 
 
+async def _async_validate_api_key(hass, api_key: str | None) -> str | None:
+    """Try the key against the API; return an error code, or None if valid."""
+    client = FgcApiClient(async_get_clientsession(hass), api_key)
+    try:
+        await client.async_get_stations()
+    except FgcAuthError:
+        return "invalid_auth"
+    except FgcApiError:
+        return "cannot_connect"
+    return None
+
+
 class FgcConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle the initial setup: validate the API key, pick the first station."""
 
@@ -51,6 +63,7 @@ class FgcConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._api_key: str | None = None
         self._stations: dict[str, dict] = {}
+        self._reauth_entry: ConfigEntry | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -97,6 +110,41 @@ class FgcConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id="station", data_schema=schema)
 
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Triggered automatically by Home Assistant when the API key stops
+        working (ConfigEntryAuthFailed) — lets the user supply a new one
+        without losing their configured stations/settings."""
+        self._reauth_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            api_key = user_input.get(CONF_API_KEY) or None
+            error = await _async_validate_api_key(self.hass, api_key)
+            if error:
+                errors["base"] = error
+            else:
+                self.hass.config_entries.async_update_entry(
+                    self._reauth_entry,
+                    data={**self._reauth_entry.data, CONF_API_KEY: api_key},
+                )
+                await self.hass.config_entries.async_reload(
+                    self._reauth_entry.entry_id
+                )
+                return self.async_abort(reason="reauth_successful")
+
+        schema = vol.Schema({vol.Optional(CONF_API_KEY): str})
+        return self.async_show_form(
+            step_id="reauth_confirm", data_schema=schema, errors=errors
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> FgcOptionsFlow:
@@ -111,7 +159,31 @@ class FgcOptionsFlow(OptionsFlow):
     ) -> dict[str, Any]:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["add_station", "remove_station", "settings"],
+            menu_options=["add_station", "remove_station", "api_key", "settings"],
+        )
+
+    async def async_step_api_key(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Update the FGC API key without needing to remove and re-add the
+        whole integration (e.g. if it's revoked, or added after starting
+        out with anonymous access)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            api_key = user_input.get(CONF_API_KEY) or None
+            error = await _async_validate_api_key(self.hass, api_key)
+            if error:
+                errors["base"] = error
+            else:
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={**self.config_entry.data, CONF_API_KEY: api_key},
+                )
+                return self.async_create_entry(title="", data=self.config_entry.options)
+
+        schema = vol.Schema({vol.Optional(CONF_API_KEY): str})
+        return self.async_show_form(
+            step_id="api_key", data_schema=schema, errors=errors
         )
 
     async def async_step_settings(

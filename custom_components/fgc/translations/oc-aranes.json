@@ -14,6 +14,13 @@
         "data": {
           "station_code": "Estacion"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reconnècta FGC Trens",
+        "description": "Era tua clau API de dades ubèrtes d'FGC a deishat de foncionar. Introdusís-ne ua naua, o dèisha-la en blanc entà tornar ar accès anonim.",
+        "data": {
+          "api_key": "Clau API (opcionau)"
+        }
       }
     },
     "error": {
@@ -21,7 +28,8 @@
       "cannot_connect": "No s'a pogut connectar damb era API de dades ubèrtes d'FGC."
     },
     "abort": {
-      "already_configured": "FGC Trens ja ei configurat. Ajusta o lheva estacions des des sues opcions de Configuracion."
+      "already_configured": "FGC Trens ja ei configurat. Ajusta o lheva estacions des des sues opcions de Configuracion.",
+      "reauth_successful": "Reconnexion corrècta."
     }
   },
   "options": {
@@ -31,7 +39,15 @@
         "menu_options": {
           "add_station": "Apondre ua estacion",
           "remove_station": "Lheva ua estacion",
+          "api_key": "Actualizar era clau API",
           "settings": "Configuracion"
+        }
+      },
+      "api_key": {
+        "title": "Actualizar era clau API",
+        "description": "Remplaça era clau API de dades ubèrtes d'FGC emplegada per aguesta integracion. Dèisha-la en blanc entà passar ar accès anonim.",
+        "data": {
+          "api_key": "Clau API (opcionau)"
         }
       },
       "add_station": {

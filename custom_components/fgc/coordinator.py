@@ -33,10 +33,11 @@ from datetime import date, datetime, timedelta
 from typing import Any, TypedDict
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import FgcApiClient, FgcApiError, StationInfo
+from .api import FgcApiClient, FgcApiError, FgcAuthError, StationInfo
 from .const import DOMAIN, REALTIME_MATCH_MAX_DELTA, SCAN_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -249,6 +250,8 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
                 stop_ids = self._stations.get(code, {}).get("stop_ids", [code])
                 try:
                     rows = await self._client.async_get_day_schedule(stop_ids)
+                except FgcAuthError as err:
+                    raise ConfigEntryAuthFailed("Invalid FGC API key") from err
                 except FgcApiError as err:
                     raise UpdateFailed(
                         f"Error fetching FGC schedule for station {code}: {err}"

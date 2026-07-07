@@ -19,6 +19,19 @@ station, using the public
 (today's static timetable, corrected against FGC's live GTFS-Realtime feed
 where available).
 
+## Data source & terms
+
+All data comes from FGC's [open data portal](https://dadesobertes.fgc.cat/),
+under the **[Creative Commons Attribution 4.0 (CC-BY 4.0)](https://creativecommons.org/licenses/by/4.0/legalcode)**
+license (confirmed the same across every dataset this integration uses).
+In short: the data is free to use, share, and adapt — including
+commercially — as long as FGC is credited as the source, which this
+integration does throughout. The portal's general
+[terms and conditions](https://dadesobertes.fgc.cat/terms/terms-and-conditions/)
+also apply. Anonymous API access (the default, unless you add your own
+key in Setup below) is capped at 5000 requests/day, shared per IP by the
+portal.
+
 ## Install
 
 ### HACS (recommended)
@@ -52,6 +65,12 @@ speaker's — corrections via a PR are welcome.
 4. To monitor more stations, or drop one, open the integration's
    **Configure** menu and choose "Add a station" / "Remove a station" — no
    need to re-run the setup wizard.
+5. To add, change, or remove your API key later (e.g. it was revoked, or
+   you want to add one after starting out anonymous), use **Configure ->
+   Update API key** — this updates it in place without losing your
+   stations or settings. If the key stops working on its own (revoked,
+   expired) Home Assistant will also prompt you to fix it automatically via
+   a notification on the integration.
 
 Each station gets one sensor per distinct destination served from it — a
 station with only one destination all day (typically a terminus) collapses

@@ -8,9 +8,10 @@ import logging
 from typing import TypedDict
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import FgcApiClient, FgcApiError
+from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import (
     AIR_QUALITY_SCAN_INTERVAL,
     CARBON_FOOTPRINT_SCAN_INTERVAL,
@@ -42,6 +43,8 @@ class AirQualityCoordinator(DataUpdateCoordinator[dict[str, AirQualityReading]])
     async def _async_update_data(self) -> dict[str, AirQualityReading]:
         try:
             rows = await self._client.async_get_air_quality()
+        except FgcAuthError as err:
+            raise ConfigEntryAuthFailed("Invalid FGC API key") from err
         except FgcApiError as err:
             raise UpdateFailed(f"Error fetching FGC air quality data: {err}") from err
 
@@ -83,6 +86,8 @@ class SkiParkingCoordinator(DataUpdateCoordinator[dict[str, list[ParkingFacility
     async def _async_update_data(self) -> dict[str, list[ParkingFacility]]:
         try:
             rows = await self._client.async_get_ski_parking()
+        except FgcAuthError as err:
+            raise ConfigEntryAuthFailed("Invalid FGC API key") from err
         except FgcApiError as err:
             raise UpdateFailed(f"Error fetching FGC ski parking data: {err}") from err
 
@@ -126,6 +131,8 @@ class CarbonFootprintCoordinator(DataUpdateCoordinator[CarbonFootprint | None]):
     async def _async_update_data(self) -> CarbonFootprint | None:
         try:
             rows = await self._client.async_get_carbon_footprint()
+        except FgcAuthError as err:
+            raise ConfigEntryAuthFailed("Invalid FGC API key") from err
         except FgcApiError as err:
             raise UpdateFailed(f"Error fetching FGC carbon footprint data: {err}") from err
 
@@ -181,6 +188,8 @@ class WebcamCoordinator(DataUpdateCoordinator[dict[str, Webcam]]):
     async def _async_update_data(self) -> dict[str, Webcam]:
         try:
             rows = await self._client.async_get_ski_webcams()
+        except FgcAuthError as err:
+            raise ConfigEntryAuthFailed("Invalid FGC API key") from err
         except FgcApiError as err:
             raise UpdateFailed(f"Error fetching FGC webcams: {err}") from err
 

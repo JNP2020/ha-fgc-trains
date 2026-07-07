@@ -14,6 +14,13 @@
         "data": {
           "station_code": "Station"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect FGC Trains",
+        "description": "Your FGC open-data API key stopped working. Enter a new one, or leave it blank to fall back to anonymous access.",
+        "data": {
+          "api_key": "API key (optional)"
+        }
       }
     },
     "error": {
@@ -21,7 +28,8 @@
       "cannot_connect": "Could not reach the FGC open-data API."
     },
     "abort": {
-      "already_configured": "FGC Trains is already set up. Add or remove stations from its Configure options."
+      "already_configured": "FGC Trains is already set up. Add or remove stations from its Configure options.",
+      "reauth_successful": "Reconnected successfully."
     }
   },
   "options": {
@@ -31,7 +39,15 @@
         "menu_options": {
           "add_station": "Add a station",
           "remove_station": "Remove a station",
+          "api_key": "Update API key",
           "settings": "Settings"
+        }
+      },
+      "api_key": {
+        "title": "Update API key",
+        "description": "Replace the FGC open-data API key used by this integration. Leave blank to switch to anonymous access.",
+        "data": {
+          "api_key": "API key (optional)"
         }
       },
       "add_station": {
