@@ -235,6 +235,16 @@ def _remove_stale_entities(
     these is either for a removed station/destination or a feature that's
     now turned off, either way no longer wanted.
 
+    Ski and ski-parking sensors are additionally keyed off their
+    coordinator's *data* (one sensor per resort actually reported), which
+    is only trustworthy after a successful fetch — a coordinator whose
+    first refresh failed and is sitting on the empty-dict fallback (see
+    `_first_refresh_non_blocking`) would otherwise look identical to "this
+    feature has no resorts", and wipe out every real sensor from a previous
+    successful run over what's just a transient hiccup. So those two are
+    skipped from this sweep entirely whenever their last update failed,
+    leaving existing entities alone until a real refresh succeeds.
+
     Device trackers (live train positions) and webcam cameras have their
     own unrelated unique_id scheme and dynamic lifecycle — while enabled
     they go unavailable rather than get removed when a unit/webcam drops
@@ -250,7 +260,9 @@ def _remove_stale_entities(
         for code, destinations in coordinator.destinations.items()
         for destination in destinations
     }
-    if ski_coordinator is not None:
+    ski_prefix = f"{entry.entry_id}_ski_"
+    ski_data_trustworthy = ski_coordinator is not None and ski_coordinator.last_update_success
+    if ski_data_trustworthy:
         wanted_sensor_ids |= {
             f"{entry.entry_id}_ski_{slugify(name)}" for name in ski_coordinator.data
         }
@@ -260,7 +272,11 @@ def _remove_stale_entities(
         wanted_sensor_ids |= {
             f"{entry.entry_id}_airquality_{code}" for code in station_codes
         }
-    if ski_parking_coordinator is not None:
+    ski_parking_prefix = f"{entry.entry_id}_skiparking_"
+    ski_parking_data_trustworthy = (
+        ski_parking_coordinator is not None and ski_parking_coordinator.last_update_success
+    )
+    if ski_parking_data_trustworthy:
         wanted_sensor_ids |= {
             f"{entry.entry_id}_skiparking_{slugify(name)}"
             for name in ski_parking_coordinator.data
@@ -275,6 +291,10 @@ def _remove_stale_entities(
     for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         unique_id = entity_entry.unique_id or ""
         if entity_entry.domain == "sensor":
+            if unique_id.startswith(ski_prefix) and not ski_data_trustworthy:
+                continue
+            if unique_id.startswith(ski_parking_prefix) and not ski_parking_data_trustworthy:
+                continue
             if unique_id not in wanted_sensor_ids:
                 registry.async_remove(entity_entry.entity_id)
         elif entity_entry.domain == "device_tracker" and not map_enabled:

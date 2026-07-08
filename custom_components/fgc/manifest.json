@@ -3,10 +3,10 @@
   "name": "FGC Trains",
   "codeowners": ["@JNP2020"],
   "config_flow": true,
-  "dependencies": ["http"],
+  "dependencies": ["frontend", "http"],
   "documentation": "https://dadesobertes.fgc.cat/api-console/explore/v2.1/catalog/datasets/gtfs_stops/",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://dadesobertes.fgc.cat/api-console/explore/v2.1/catalog/datasets/gtfs_stops/",
   "requirements": ["gtfs-realtime-bindings>=1.0.0", "Pillow>=9.0.0"],
-  "version": "2.13.0"
+  "version": "2.13.1"
 }

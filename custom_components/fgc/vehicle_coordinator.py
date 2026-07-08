@@ -83,7 +83,13 @@ class FgcVehicleCoordinator(DataUpdateCoordinator[dict[str, VehiclePosition]]):
 
     async def _async_update_data(self) -> dict[str, VehiclePosition]:
         if self._schedule_coordinator.is_quiet(dt_util.now()):
-            return self.data or {}
+            # Unlike a scheduled departure time (a fact that stays valid
+            # until the next real fetch), a vehicle position is only ever a
+            # snapshot of right now — carrying the last-seen positions
+            # through the whole quiet window would show trains "parked" at
+            # wherever they were before service stopped, which is stale and
+            # misleading rather than merely unrefreshed. Report none instead.
+            return {}
 
         if self._station_names is None:
             try:
