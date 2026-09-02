@@ -69,13 +69,15 @@ def _platform_text(platform: Any) -> str:
         return ""
 
 
-def render_board(departures: list[dict], station_name: str, rows: int = 4) -> bytes:
+def render_board(
+    departures: list[dict], station_name: str, rows: int = 4, now: datetime | None = None
+) -> bytes:
     """Draw the board for `station_name` and return it as PNG bytes.
 
     `departures` should already be sorted/deduped/filtered to the future
     (see FgcCoordinator.get_board) — this only takes the first `rows`.
     """
-    now = datetime.now().astimezone()
+    now = now or datetime.now().astimezone()
     height = _HEADER_HEIGHT + rows * _ROW_HEIGHT + _PADDING
 
     img = Image.new("RGB", (_WIDTH, height), _BG)

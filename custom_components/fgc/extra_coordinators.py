@@ -22,6 +22,13 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _float_or_none(value: object) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
 class AirQualityReading(TypedDict):
     station_name: str
     index: str | None
@@ -53,17 +60,12 @@ class AirQualityCoordinator(DataUpdateCoordinator[dict[str, AirQualityReading]])
             name = row.get("stop_name")
             if not name:
                 continue
-            pm10_raw = row.get("data_pm10")
-            try:
-                pm10 = float(pm10_raw) if pm10_raw not in (None, "") else None
-            except (TypeError, ValueError):
-                pm10 = None
             readings[name] = AirQualityReading(
                 station_name=name,
                 index=row.get("iqam"),
-                no2=row.get("data_no2"),
-                o3=row.get("data_o3"),
-                pm10=pm10,
+                no2=_float_or_none(row.get("data_no2")),
+                o3=_float_or_none(row.get("data_o3")),
+                pm10=_float_or_none(row.get("data_pm10")),
                 monitoring_station=row.get("nom_estaci"),
             )
         return readings
@@ -149,10 +151,14 @@ class CarbonFootprintCoordinator(DataUpdateCoordinator[CarbonFootprint | None]):
             if row.get("any") != latest_year:
                 continue
             scope = row.get("abast") or "?"
-            total = row.get("total") or 0.0
+            total = _float_or_none(row.get("total"))
+            mobility = _float_or_none(row.get("mobilitat"))
+            tourism = _float_or_none(row.get("turisme"))
+            if total is None or mobility is None or tourism is None:
+                continue
             by_scope[scope] = by_scope.get(scope, 0.0) + total
-            mobility_total += row.get("mobilitat") or 0.0
-            tourism_total += row.get("turisme") or 0.0
+            mobility_total += mobility
+            tourism_total += tourism
             grand_total += total
 
         return CarbonFootprint(
@@ -195,7 +201,7 @@ class WebcamCoordinator(DataUpdateCoordinator[dict[str, Webcam]]):
 
         webcams: dict[str, Webcam] = {}
         for row in rows:
-            if row.get("is_active") != 1:
+            if str(row.get("is_active")) not in ("1", "1.0", "True"):
                 continue
             webcam_id = row.get("id")
             resort = row.get("name_bu")

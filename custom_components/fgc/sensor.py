@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -99,9 +99,85 @@ async def async_setup_entry(
 
     carbon_footprint_coordinator = data.get("carbon_footprint_coordinator")
     if carbon_footprint_coordinator is not None:
-        entities.append(CarbonFootprintSensor(carbon_footprint_coordinator, entry))
+        if carbon_footprint_coordinator.data is not None:
+            entities.append(CarbonFootprintSensor(carbon_footprint_coordinator, entry))
 
     async_add_entities(entities)
+
+    known_optional_ids = {entity.unique_id for entity in entities}
+
+    def _add_optional(new_entities: list[SensorEntity]) -> None:
+        new_entities = [
+            entity
+            for entity in new_entities
+            if entity.unique_id not in known_optional_ids
+        ]
+        if new_entities:
+            known_optional_ids.update(entity.unique_id for entity in new_entities)
+            async_add_entities(new_entities)
+
+    if ski_coordinator is not None:
+
+        @callback
+        def _add_ski_entities() -> None:
+            _add_optional(
+                [
+                    SkiResortSensor(ski_coordinator, entry, resort_name)
+                    for resort_name in ski_coordinator.data
+                ]
+            )
+
+        entry.async_on_unload(ski_coordinator.async_add_listener(_add_ski_entities))
+
+    if air_quality_coordinator is not None:
+
+        @callback
+        def _add_air_quality_entities() -> None:
+            _add_optional(
+                [
+                    AirQualitySensor(
+                        air_quality_coordinator,
+                        entry,
+                        code,
+                        stations.get(code, {}).get("name", code),
+                    )
+                    for code in entry.options.get(CONF_STATIONS, [])
+                    if stations.get(code, {}).get("name", code)
+                    in air_quality_coordinator.data
+                ]
+            )
+
+        entry.async_on_unload(
+            air_quality_coordinator.async_add_listener(_add_air_quality_entities)
+        )
+
+    if ski_parking_coordinator is not None:
+
+        @callback
+        def _add_parking_entities() -> None:
+            _add_optional(
+                [
+                    SkiParkingSensor(ski_parking_coordinator, entry, resort_name)
+                    for resort_name in ski_parking_coordinator.data
+                ]
+            )
+
+        entry.async_on_unload(
+            ski_parking_coordinator.async_add_listener(_add_parking_entities)
+        )
+
+    if carbon_footprint_coordinator is not None:
+
+        @callback
+        def _add_carbon_entity() -> None:
+            if carbon_footprint_coordinator.data is not None:
+                _add_optional(
+                    [CarbonFootprintSensor(carbon_footprint_coordinator, entry)]
+                )
+
+        entry.async_on_unload(
+            carbon_footprint_coordinator.async_add_listener(_add_carbon_entity)
+        )
 
 
 class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):

@@ -50,7 +50,12 @@ class FgcTimetableCard extends HTMLElement {
     if (!config || !config.station) {
       throw new Error("fgc-timetable-card: you must set 'station' (a station's display name) in the card config.");
     }
-    this._config = { rows: 4, ...config };
+    const requestedRows = Number(config.rows);
+    const rows = Number.isFinite(requestedRows)
+      ? Math.max(1, Math.min(12, Math.floor(requestedRows)))
+      : 4;
+    this._config = { rows, ...config };
+    this._config.rows = rows;
     this._built = false;
     this._departures = [];
   }

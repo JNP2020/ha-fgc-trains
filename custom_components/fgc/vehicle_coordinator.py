@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import TypedDict
 
 from homeassistant.core import HomeAssistant
@@ -111,7 +112,24 @@ class FgcVehicleCoordinator(DataUpdateCoordinator[dict[str, VehiclePosition]]):
         for row in rows:
             unit_id = row.get("ut")
             point = row.get("geo_point_2d")
-            if not unit_id or not point:
+            if (
+                not unit_id
+                or not isinstance(point, dict)
+                or point.get("lat") is None
+                or point.get("lon") is None
+            ):
+                continue
+            try:
+                latitude = float(point["lat"])
+                longitude = float(point["lon"])
+            except (TypeError, ValueError):
+                continue
+            if not (
+                math.isfinite(latitude)
+                and math.isfinite(longitude)
+                and -90 <= latitude <= 90
+                and -180 <= longitude <= 180
+            ):
                 continue
             origin = row.get("origen")
             destination = row.get("desti")
@@ -132,7 +150,7 @@ class FgcVehicleCoordinator(DataUpdateCoordinator[dict[str, VehiclePosition]]):
                 stopped_at_name=names.get(stopped_at) if stopped_at else None,
                 on_time=(str(en_hora) == "True") if en_hora is not None else None,
                 unit_type=row.get("tipus_unitat"),
-                latitude=point["lat"],
-                longitude=point["lon"],
+                latitude=latitude,
+                longitude=longitude,
             )
         return vehicles

@@ -95,7 +95,7 @@ class SkiCoordinator(DataUpdateCoordinator[dict[str, SkiResort]]):
                 continue
             resort = _resort(name)
             resort["total_facilities"] += 1
-            if row.get("is_open") == "1":
+            if str(row.get("is_open")) in ("1", "1.0", "True"):
                 resort["open_facilities"] += 1
 
         for resort in resorts.values():
@@ -111,7 +111,7 @@ class SkiCoordinator(DataUpdateCoordinator[dict[str, SkiResort]]):
             resort["temperature"] = row.get("meteo_data_temperaturaactual_value")
             resort["wind_speed"] = row.get("meteo_data_ventactual_value")
             point = row.get("coordenades")
-            if point:
+            if isinstance(point, dict):
                 resort["latitude"] = point.get("lat")
                 resort["longitude"] = point.get("lon")
 
@@ -126,7 +126,7 @@ class SkiCoordinator(DataUpdateCoordinator[dict[str, SkiResort]]):
                 resorts[name]["alerts"].append(text)
 
         for row in webcams:
-            if row.get("is_active") != 1:
+            if str(row.get("is_active")) not in ("1", "1.0", "True"):
                 continue
             name = row.get("name_bu")
             if not name or name not in resorts or resorts[name]["webcam_url"]:

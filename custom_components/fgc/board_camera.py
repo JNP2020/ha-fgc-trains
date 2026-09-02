@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from homeassistant.components.camera import Camera
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -46,5 +47,5 @@ class FgcBoardCamera(CoordinatorEntity[FgcCoordinator], Camera):
         departures = self.coordinator.get_board(self._station_code)
         # Pillow rendering is synchronous/CPU-bound: run off the event loop.
         return await self.hass.async_add_executor_job(
-            render_board, departures, self._station_name
+            render_board, departures, self._station_name, 4, dt_util.now()
         )

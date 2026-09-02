@@ -32,12 +32,13 @@ class ServiceAlert(TypedDict):
     valid_until: str | None
 
 
-def _parse_dt(raw: str | None) -> datetime | None:
+def _parse_dt(raw: object, tzinfo) -> datetime | None:
     if not raw:
         return None
     try:
-        return datetime.fromisoformat(raw)
-    except ValueError:
+        parsed = datetime.fromisoformat(raw)
+        return parsed.replace(tzinfo=tzinfo) if parsed.tzinfo is None else parsed
+    except (TypeError, ValueError):
         return None
 
 
@@ -61,8 +62,8 @@ class AlertsCoordinator(DataUpdateCoordinator[list[ServiceAlert]]):
         now = dt_util.now()
         active: list[ServiceAlert] = []
         for row in rows:
-            valid_from = _parse_dt(row.get("from"))
-            valid_until = _parse_dt(row.get("to"))
+            valid_from = _parse_dt(row.get("from"), now.tzinfo)
+            valid_until = _parse_dt(row.get("to"), now.tzinfo)
             if valid_from and valid_from > now:
                 continue  # not started yet
             if valid_until and valid_until < now:
