@@ -1,4 +1,6 @@
 {
   "name": "FGC Trains",
+  "homeassistant": "2024.12.0",
+  "country": "ES",
   "render_readme": true
 }

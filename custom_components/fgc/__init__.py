@@ -205,6 +205,7 @@ async def _async_register_frontend_resources(hass: HomeAssistant) -> None:
         except ImportError:
             hass.http.register_static_path(FRONTEND_URL_BASE, www_dir, False)
         add_extra_js_url(hass, f"{FRONTEND_URL_BASE}/{CARD_JS_FILENAME}")
+        hass.data.setdefault(DOMAIN, {})["_frontend_registered"] = True
     except Exception:  # noqa: BLE001 - never let a card-serving hiccup break setup
         _LOGGER.warning(
             "Could not register the fgc-timetable-card frontend resource; "
@@ -212,7 +213,6 @@ async def _async_register_frontend_resources(hass: HomeAssistant) -> None:
             "be available until this succeeds on a future reload.",
             exc_info=True,
         )
-    hass.data.setdefault(DOMAIN, {})["_frontend_registered"] = True
 
 
 def _remove_stale_entities(
