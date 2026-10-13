@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import urllib.parse
 from typing import Any, TypedDict
 
 import aiohttp
@@ -39,6 +40,42 @@ _MAX_PAGES = 100
 # their sensors start failing to refresh.
 _LOW_QUOTA_THRESHOLD = 0.1
 
+# Applied to every outbound request (the FGC API itself, and any URL it
+# hands back to us, e.g. the GTFS-RT feed file). Without this, a stalled
+# upstream would hang the coordinator indefinitely instead of failing and
+# retrying on its normal schedule.
+_REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30, connect=10)
+
+# How much of a non-200/unparsable response body to fold into our own
+# exception message — enough to be useful in the log, not enough for a
+# verbose/malicious upstream to bloat it.
+_ERROR_BODY_MAX_CHARS = 300
+
+# The FGC API always hands back absolute URLs for secondary downloads (the
+# GTFS-RT feed file, ski webcam stills). Refusing anything but https guards
+# against ever being redirected into fetching an internal/non-https
+# resource if that upstream data were ever tampered with.
+_ALLOWED_URL_SCHEMES = {"https"}
+
+# Hard ceiling on a single GTFS-RT feed download, so a misbehaving or
+# compromised upstream can't make us buffer an unbounded response into
+# memory before protobuf-parsing it. The real feed is on the order of a
+# few hundred KB.
+_MAX_FEED_BYTES = 20 * 1024 * 1024
+
+
+def _require_https(url: str, what: str) -> None:
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if scheme not in _ALLOWED_URL_SCHEMES:
+        raise FgcApiError(f"Refusing to fetch {what}: non-https URL ({url!r})")
+
+
+def _truncate_body(payload: Any) -> str:
+    text = str(payload)
+    if len(text) > _ERROR_BODY_MAX_CHARS:
+        text = text[:_ERROR_BODY_MAX_CHARS] + "…"
+    return text
+
 
 class StationInfo(TypedDict):
     """A physical station: its display name and every platform stop_id it has."""
@@ -69,7 +106,9 @@ class FgcApiClient:
             headers["Authorization"] = f"Apikey {self._api_key}"
         url = f"{API_BASE_URL}/{dataset}/records"
         try:
-            async with self._session.get(url, params=params, headers=headers) as resp:
+            async with self._session.get(
+                url, params=params, headers=headers, timeout=_REQUEST_TIMEOUT
+            ) as resp:
                 try:
                     payload = await resp.json()
                 except (aiohttp.ContentTypeError, ValueError) as err:
@@ -85,12 +124,14 @@ class FgcApiClient:
                     raise FgcAuthError("Invalid FGC API key")
                 if resp.status != 200:
                     raise FgcApiError(
-                        f"FGC API returned HTTP {resp.status}: {payload}"
+                        f"FGC API returned HTTP {resp.status}: {_truncate_body(payload)}"
                     )
                 self._check_rate_limit(resp.headers)
                 return payload
         except aiohttp.ClientError as err:
             raise FgcApiError(f"Error communicating with FGC API: {err}") from err
+        except TimeoutError as err:
+            raise FgcApiError(f"Timed out communicating with FGC API: {err}") from err
 
     def _check_rate_limit(self, headers: Any) -> None:
         """Warn once when the daily quota is running low, so a user sees a
@@ -241,16 +282,31 @@ class FgcApiClient:
         file_url = file_info.get("url") if file_info else None
         if not file_url:
             raise FgcApiError("GTFS-RT trip-updates feed has no file to download")
+        _require_https(file_url, "the GTFS-RT trip-updates feed")
 
         try:
-            async with self._session.get(file_url) as resp:
+            async with self._session.get(file_url, timeout=_REQUEST_TIMEOUT) as resp:
                 if resp.status != 200:
                     raise FgcApiError(
                         f"Could not download GTFS-RT trip updates (HTTP {resp.status})"
                     )
-                data = await resp.read()
+                content_length = resp.content_length
+                if content_length is not None and content_length > _MAX_FEED_BYTES:
+                    raise FgcApiError(
+                        f"GTFS-RT trip-updates feed is too large "
+                        f"({content_length} bytes > {_MAX_FEED_BYTES} limit); refusing to "
+                        "download it"
+                    )
+                data = await resp.content.read(_MAX_FEED_BYTES + 1)
+                if len(data) > _MAX_FEED_BYTES:
+                    raise FgcApiError(
+                        f"GTFS-RT trip-updates feed exceeded the {_MAX_FEED_BYTES}-byte "
+                        "limit while downloading; refusing to parse a partial feed"
+                    )
         except aiohttp.ClientError as err:
             raise FgcApiError(f"Error downloading GTFS-RT trip updates: {err}") from err
+        except TimeoutError as err:
+            raise FgcApiError(f"Timed out downloading GTFS-RT trip updates: {err}") from err
 
         feed = gtfs_realtime_pb2.FeedMessage()
         try:

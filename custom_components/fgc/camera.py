@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 
+import aiohttp
 from homeassistant.components.camera import Camera
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -24,6 +25,12 @@ from .const import CONF_STATIONS, DOMAIN
 from .extra_coordinators import Webcam, WebcamCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# Same request budget/size ceiling as the GTFS-RT feed download in api.py —
+# a webcam host hanging or serving an oversized response shouldn't be able
+# to stall or bloat this camera entity.
+_WEBCAM_TIMEOUT = aiohttp.ClientTimeout(total=15, connect=10)
+_MAX_WEBCAM_BYTES = 10 * 1024 * 1024
 
 
 async def async_setup_entry(
@@ -103,12 +110,35 @@ class FgcWebcamCamera(CoordinatorEntity[WebcamCoordinator], Camera):
         webcam = self._webcam
         if not webcam:
             return None
+        url = webcam["url"]
+        if not url.lower().startswith("https://"):
+            _LOGGER.debug(
+                "Refusing to fetch webcam image for %s: non-https URL", self.webcam_id
+            )
+            return None
         session = async_get_clientsession(self.hass)
         try:
-            async with session.get(webcam["url"]) as resp:
+            async with session.get(url, timeout=_WEBCAM_TIMEOUT) as resp:
                 if resp.status != 200:
                     return None
-                return await resp.read()
+                content_length = resp.content_length
+                if content_length is not None and content_length > _MAX_WEBCAM_BYTES:
+                    _LOGGER.debug(
+                        "Webcam image for %s exceeds the %d-byte limit; skipping",
+                        self.webcam_id,
+                        _MAX_WEBCAM_BYTES,
+                    )
+                    return None
+                data = await resp.content.read(_MAX_WEBCAM_BYTES + 1)
+                if len(data) > _MAX_WEBCAM_BYTES:
+                    _LOGGER.debug(
+                        "Webcam image for %s exceeded the %d-byte limit while "
+                        "downloading; discarding partial image",
+                        self.webcam_id,
+                        _MAX_WEBCAM_BYTES,
+                    )
+                    return None
+                return data
         except Exception:  # noqa: BLE001 - a fetch failure just means no snapshot
             _LOGGER.debug(
                 "Could not fetch webcam image for %s", self.webcam_id, exc_info=True
