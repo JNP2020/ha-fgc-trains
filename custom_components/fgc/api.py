@@ -99,6 +99,11 @@ class FgcApiClient:
         self._session = session
         self._api_key = api_key or None
         self._low_quota_warned = False
+        # Optional hook the integration can set to surface the low-quota
+        # warning as an HA repair issue (see __init__.py), not just a log
+        # line most users never check. Called with (remaining, limit).
+        self.on_low_quota: Any = None
+        self.on_quota_recovered: Any = None
 
     async def _get(self, dataset: str, params: dict[str, Any]) -> dict[str, Any]:
         headers = {}
@@ -154,8 +159,12 @@ class FgcApiClient:
                 remaining,
                 limit,
             )
-        elif not low:
+            if self.on_low_quota is not None:
+                self.on_low_quota(remaining, limit)
+        elif not low and self._low_quota_warned:
             self._low_quota_warned = False
+            if self.on_quota_recovered is not None:
+                self.on_quota_recovered()
 
     async def _get_all_pages(
         self, dataset: str, params: dict[str, Any]

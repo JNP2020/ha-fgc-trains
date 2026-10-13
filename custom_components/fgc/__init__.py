@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable
 
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.config_entries import ConfigEntry
@@ -11,6 +13,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -46,12 +49,90 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.DEVICE_TRACKER, Platform.CAMERA]
 
 
+@dataclass(frozen=True)
+class _OptionalFeature:
+    """One secondary, independently-toggleable data source.
+
+    Declaring these in a table instead of as separate near-identical
+    if/else blocks keeps `async_setup_entry` and `_remove_stale_entities`
+    from growing another near-copy-paste branch every time a new optional
+    feature is added — adding one is now a single new entry here.
+
+    `data_key` is the key this feature's coordinator is stored under in
+    `hass.data[DOMAIN][entry.entry_id]` (also used as its log name, with
+    underscores turned to spaces).
+    """
+
+    data_key: str
+    option_flag: str
+    default_enabled: bool
+    factory: Callable[[HomeAssistant, FgcApiClient, FgcCoordinator], DataUpdateCoordinator]
+    empty_default: Any
+
+
+_OPTIONAL_FEATURES: tuple[_OptionalFeature, ...] = (
+    _OptionalFeature(
+        "vehicle_coordinator",
+        CONF_ENABLE_MAP,
+        True,
+        lambda hass, client, coordinator: FgcVehicleCoordinator(hass, client, coordinator),
+        {},
+    ),
+    _OptionalFeature(
+        "ski_coordinator",
+        CONF_ENABLE_SKI,
+        True,
+        lambda hass, client, _coordinator: SkiCoordinator(hass, client),
+        {},
+    ),
+    _OptionalFeature(
+        "alerts_coordinator",
+        CONF_ENABLE_ALERTS,
+        True,
+        lambda hass, client, _coordinator: AlertsCoordinator(hass, client),
+        [],
+    ),
+    # Off by default: niche/low-demand data sources added after the core
+    # feature set, kept opt-in so most users don't pay their (small) API
+    # cost for entities they'll never look at.
+    _OptionalFeature(
+        "air_quality_coordinator",
+        CONF_ENABLE_AIR_QUALITY,
+        False,
+        lambda hass, client, _coordinator: AirQualityCoordinator(hass, client),
+        {},
+    ),
+    _OptionalFeature(
+        "ski_parking_coordinator",
+        CONF_ENABLE_SKI_PARKING,
+        False,
+        lambda hass, client, _coordinator: SkiParkingCoordinator(hass, client),
+        {},
+    ),
+    _OptionalFeature(
+        "webcam_coordinator",
+        CONF_ENABLE_WEBCAMS,
+        False,
+        lambda hass, client, _coordinator: WebcamCoordinator(hass, client),
+        {},
+    ),
+    _OptionalFeature(
+        "carbon_footprint_coordinator",
+        CONF_ENABLE_CARBON_FOOTPRINT,
+        False,
+        lambda hass, client, _coordinator: CarbonFootprintCoordinator(hass, client),
+        None,
+    ),
+)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up FGC Trains from a config entry."""
     await _async_register_frontend_resources(hass)
 
     session = async_get_clientsession(hass)
     client = FgcApiClient(session, entry.data.get(CONF_API_KEY))
+    _wire_low_quota_repair_issue(hass, entry, client)
 
     try:
         stations = await client.async_get_stations()
@@ -64,42 +145,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = FgcCoordinator(hass, client, stations, station_codes)
     await coordinator.async_config_entry_first_refresh()
 
-    vehicle_coordinator = (
-        FgcVehicleCoordinator(hass, client, coordinator)
-        if entry.options.get(CONF_ENABLE_MAP, True)
-        else None
-    )
-    ski_coordinator = (
-        SkiCoordinator(hass, client) if entry.options.get(CONF_ENABLE_SKI, True) else None
-    )
-    alerts_coordinator = (
-        AlertsCoordinator(hass, client)
-        if entry.options.get(CONF_ENABLE_ALERTS, True)
-        else None
-    )
-    # Off by default: niche/low-demand data sources added after the core
-    # feature set, kept opt-in so most users don't pay their (small) API
-    # cost for entities they'll never look at.
-    air_quality_coordinator = (
-        AirQualityCoordinator(hass, client)
-        if entry.options.get(CONF_ENABLE_AIR_QUALITY, False)
-        else None
-    )
-    ski_parking_coordinator = (
-        SkiParkingCoordinator(hass, client)
-        if entry.options.get(CONF_ENABLE_SKI_PARKING, False)
-        else None
-    )
-    webcam_coordinator = (
-        WebcamCoordinator(hass, client)
-        if entry.options.get(CONF_ENABLE_WEBCAMS, False)
-        else None
-    )
-    carbon_footprint_coordinator = (
-        CarbonFootprintCoordinator(hass, client)
-        if entry.options.get(CONF_ENABLE_CARBON_FOOTPRINT, False)
-        else None
-    )
+    optional_coordinators: dict[str, DataUpdateCoordinator | None] = {
+        feature.data_key: (
+            feature.factory(hass, client, coordinator)
+            if entry.options.get(feature.option_flag, feature.default_enabled)
+            else None
+        )
+        for feature in _OPTIONAL_FEATURES
+    }
 
     # These are all secondary to the core departure-tracking feature, so a
     # hiccup fetching any one of them shouldn't stop the whole integration
@@ -109,50 +162,61 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # makes four separate API calls).
     await asyncio.gather(
         *(
-            _first_refresh_non_blocking(name, opt_coordinator, empty_default)
-            for name, opt_coordinator, empty_default in (
-                ("live map", vehicle_coordinator, {}),
-                ("ski resorts", ski_coordinator, {}),
-                ("service alerts", alerts_coordinator, []),
-                ("air quality", air_quality_coordinator, {}),
-                ("ski parking", ski_parking_coordinator, {}),
-                ("webcams", webcam_coordinator, {}),
-                ("carbon footprint", carbon_footprint_coordinator, None),
+            _first_refresh_non_blocking(
+                feature.data_key.removesuffix("_coordinator").replace("_", " "),
+                optional_coordinators[feature.data_key],
+                feature.empty_default,
             )
-            if opt_coordinator is not None
+            for feature in _OPTIONAL_FEATURES
+            if optional_coordinators[feature.data_key] is not None
         )
     )
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
-        "vehicle_coordinator": vehicle_coordinator,
-        "ski_coordinator": ski_coordinator,
-        "alerts_coordinator": alerts_coordinator,
-        "air_quality_coordinator": air_quality_coordinator,
-        "ski_parking_coordinator": ski_parking_coordinator,
-        "webcam_coordinator": webcam_coordinator,
-        "carbon_footprint_coordinator": carbon_footprint_coordinator,
         "client": client,
         "stations": stations,
+        **optional_coordinators,
     }
 
-    _remove_stale_entities(
-        hass,
-        entry,
-        coordinator,
-        map_enabled=vehicle_coordinator is not None,
-        webcams_enabled=webcam_coordinator is not None,
-        ski_coordinator=ski_coordinator,
-        alerts_enabled=alerts_coordinator is not None,
-        air_quality_coordinator=air_quality_coordinator,
-        ski_parking_coordinator=ski_parking_coordinator,
-        carbon_footprint_coordinator=carbon_footprint_coordinator,
-    )
+    _remove_stale_entities(hass, entry, coordinator, optional_coordinators)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
+
+
+def _wire_low_quota_repair_issue(
+    hass: HomeAssistant, entry: ConfigEntry, client: FgcApiClient
+) -> None:
+    """Surface the FgcApiClient's low-quota warning as an HA repair issue.
+
+    The client already logs a warning once the daily API quota drops below
+    the threshold, but most users never check the core log, so a transient
+    rate-limit issue just looks like "sensors stopped updating" with no
+    obvious cause. A repair issue shows up front-and-center in Settings ->
+    System -> Repairs instead, and clears itself once the quota recovers
+    (e.g. after the next daily reset).
+    """
+    issue_id = f"{entry.entry_id}_low_api_quota"
+
+    def _on_low_quota(remaining: int, limit: int) -> None:
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="low_api_quota",
+            translation_placeholders={"remaining": str(remaining), "limit": str(limit)},
+        )
+
+    def _on_quota_recovered() -> None:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+
+    client.on_low_quota = _on_low_quota
+    client.on_quota_recovered = _on_quota_recovered
 
 
 async def _first_refresh_non_blocking(
@@ -219,13 +283,7 @@ def _remove_stale_entities(
     hass: HomeAssistant,
     entry: ConfigEntry,
     coordinator: FgcCoordinator,
-    map_enabled: bool,
-    webcams_enabled: bool,
-    ski_coordinator: SkiCoordinator | None,
-    alerts_enabled: bool,
-    air_quality_coordinator: AirQualityCoordinator | None,
-    ski_parking_coordinator: SkiParkingCoordinator | None,
-    carbon_footprint_coordinator: CarbonFootprintCoordinator | None,
+    optional_coordinators: dict[str, DataUpdateCoordinator | None],
 ) -> None:
     """Drop entities no longer relevant to the current configuration.
 
@@ -253,6 +311,20 @@ def _remove_stale_entities(
     (one per configured station, like the departure sensors), so they get
     the same "wanted set" treatment as sensors rather than an on/off sweep.
     """
+    ski_coordinator: SkiCoordinator | None = optional_coordinators["ski_coordinator"]
+    alerts_enabled = optional_coordinators["alerts_coordinator"] is not None
+    air_quality_coordinator: AirQualityCoordinator | None = optional_coordinators[
+        "air_quality_coordinator"
+    ]
+    ski_parking_coordinator: SkiParkingCoordinator | None = optional_coordinators[
+        "ski_parking_coordinator"
+    ]
+    carbon_footprint_coordinator: CarbonFootprintCoordinator | None = optional_coordinators[
+        "carbon_footprint_coordinator"
+    ]
+    map_enabled = optional_coordinators["vehicle_coordinator"] is not None
+    webcams_enabled = optional_coordinators["webcam_coordinator"] is not None
+
     registry = er.async_get(hass)
     station_codes = entry.options.get(CONF_STATIONS, [])
     wanted_sensor_ids = {
@@ -316,4 +388,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
+        ir.async_delete_issue(hass, DOMAIN, f"{entry.entry_id}_low_api_quota")
     return unload_ok

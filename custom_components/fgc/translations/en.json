@@ -83,5 +83,11 @@
       "no_stations_available": "Every station is already being monitored.",
       "no_stations_configured": "No stations are currently configured."
     }
+  },
+  "issues": {
+    "low_api_quota": {
+      "title": "FGC open-data API quota running low",
+      "description": "Only {remaining} of {limit} daily FGC open-data API requests remain. Once it hits 0, sensors will stop refreshing until the quota resets. Consider adding your own API key, removing some stations, or turning off the live map/ski sensors (Settings -> Devices & services -> FGC Trains -> Configure -> Settings) to reduce usage."
+    }
   }
 }
