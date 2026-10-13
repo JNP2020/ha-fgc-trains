@@ -1,0 +1,21 @@
+name: Tests and lint
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@3892123fbe74688ccc83ec7c465dc688359e5199 # v5
+        with:
+          python-version: "3.13"
+      - name: Install test dependencies
+        run: pip install -r requirements_test.txt
+      - name: Run ruff
+        run: ruff check custom_components tests
+      - name: Run pytest
+        run: pytest -v

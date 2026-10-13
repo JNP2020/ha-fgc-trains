@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .vscode/
+.venv/
+.pylibs*/
+.pytest_cache/
+.ruff_cache/

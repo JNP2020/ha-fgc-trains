@@ -16,6 +16,7 @@ try:  # UnitOfTime.MINUTES landed in newer HA cores; fall back for older ones.
 except ImportError:  # pragma: no cover
     _MINUTES = "min"
 
+from .alerts_sensor import ServiceAlertsSensor
 from .const import (
     ATTR_DESTINATION,
     ATTR_DIRECTION,
@@ -31,7 +32,6 @@ from .const import (
     CONF_STATIONS,
     DOMAIN,
 )
-from .alerts_sensor import ServiceAlertsSensor
 from .coordinator import FgcCoordinator
 from .extra_sensors import AirQualitySensor, CarbonFootprintSensor, SkiParkingSensor
 from .ski_coordinator import SkiCoordinator
@@ -98,9 +98,8 @@ async def async_setup_entry(
             entities.append(SkiParkingSensor(ski_parking_coordinator, entry, resort_name))
 
     carbon_footprint_coordinator = data.get("carbon_footprint_coordinator")
-    if carbon_footprint_coordinator is not None:
-        if carbon_footprint_coordinator.data is not None:
-            entities.append(CarbonFootprintSensor(carbon_footprint_coordinator, entry))
+    if carbon_footprint_coordinator is not None and carbon_footprint_coordinator.data is not None:
+        entities.append(CarbonFootprintSensor(carbon_footprint_coordinator, entry))
 
     async_add_entities(entities)
 
