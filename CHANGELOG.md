@@ -4,6 +4,16 @@ All notable changes to this integration are documented here. Versions
 match `custom_components/fgc/manifest.json`. For the full history before
 2.14.0, see `git log`.
 
+## 2.16.1
+
+- Fixed the timetable card's header clock: it now always shows the
+  station's real local time (`Europe/Madrid`, every FGC station is in
+  this one zone) instead of the dashboard device's own time zone. If
+  you're viewing the dashboard from a different time zone, your local
+  time is now shown underneath as a second, smaller line — only when it
+  actually differs from the station's time, so most users still see a
+  single clock.
+
 ## 2.16.0
 
 - Added `tests/` (pytest) covering the departure-parsing/realtime-

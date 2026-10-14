@@ -18,6 +18,25 @@ const YELLOW = "#ffc629";
 const WHITE = "#ffffff";
 const DIVIDER = "rgba(255,255,255,0.12)";
 
+// The entire FGC network is within Catalonia, so every station shares this
+// one IANA zone (CET/CEST, handled automatically by Intl across the DST
+// transition) regardless of where the dashboard viewing it happens to be.
+const STATION_TIME_ZONE = "Europe/Madrid";
+
+/**
+ * Format a clock as 24h HH:mm in a given IANA time zone (or the viewer's
+ * own zone when `timeZone` is omitted). `hourCycle: "h23"` pins the 24h
+ * format Geotren boards use regardless of the browser/dashboard's locale.
+ */
+function _formatClock(date, timeZone) {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+}
+
 /**
  * Collapse departures that clearly represent the same physical train (same
  * line + destination, times within a minute of each other) down to one —
@@ -137,6 +156,16 @@ class FgcTimetableCard extends HTMLElement {
         letter-spacing: 0.02em;
         line-height: 1.2;
       }
+      .fgc-clock-secondary {
+        color: ${WHITE};
+        opacity: 0.55;
+        font-size: 0.78em;
+        font-weight: 500;
+        line-height: 1.3;
+      }
+      .fgc-clock-secondary:empty {
+        display: none;
+      }
       .fgc-spacer { flex: 1; }
       .fgc-via-label {
         color: ${YELLOW};
@@ -210,6 +239,7 @@ class FgcTimetableCard extends HTMLElement {
         <div class="fgc-title-block">
           <div class="fgc-station-name"></div>
           <div class="fgc-clock">--:--</div>
+          <div class="fgc-clock-secondary"></div>
         </div>
         <div class="fgc-spacer"></div>
         <div class="fgc-via-label">Via</div>
@@ -223,6 +253,7 @@ class FgcTimetableCard extends HTMLElement {
     this.appendChild(card);
 
     this._clockEl = wrapper.querySelector(".fgc-clock");
+    this._clockSecondaryEl = wrapper.querySelector(".fgc-clock-secondary");
     this._rowsEl = wrapper.querySelector(".fgc-rows");
     wrapper.querySelector(".fgc-station-name").textContent =
       this._config.title || this._config.station;
@@ -233,9 +264,21 @@ class FgcTimetableCard extends HTMLElement {
   _tick() {
     if (this._clockEl) {
       const now = new Date();
-      const hh = String(now.getHours()).padStart(2, "0");
-      const mm = String(now.getMinutes()).padStart(2, "0");
-      this._clockEl.textContent = `${hh}:${mm}`;
+      // Always show the station's real (Catalonia) time, not the browser/
+      // dashboard's own time zone — that's what matters for catching the
+      // train. Only surface the viewer's local time underneath, and only
+      // when it actually differs, so e.g. a dashboard viewed from abroad
+      // isn't left wondering which of two unlabeled clocks is which.
+      const stationTime = _formatClock(now, STATION_TIME_ZONE);
+      let localTime;
+      try {
+        localTime = _formatClock(now);
+      } catch (err) {
+        localTime = stationTime;
+      }
+      this._clockEl.textContent = stationTime;
+      this._clockSecondaryEl.textContent =
+        localTime === stationTime ? "" : `${localTime} local time`;
     }
     this._renderRows();
   }
