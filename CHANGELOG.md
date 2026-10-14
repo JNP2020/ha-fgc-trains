@@ -4,6 +4,19 @@ All notable changes to this integration are documented here. Versions
 match `custom_components/fgc/manifest.json`. For the full history before
 2.14.0, see `git log`.
 
+## 2.16.2
+
+- Fixed a real bug in the 2.16.1 timezone fix: the timetable card's JS
+  file was (and had always been) served at a fixed URL with no
+  cache-busting, so browsers (and the frontend's own module cache) kept
+  serving the old cached copy even after updating the integration and
+  restarting Home Assistant — meaning the station-time fix shipped in
+  2.16.1 silently did nothing for anyone who'd already loaded the card
+  before updating. The card's URL now includes the integration's own
+  version (`?v=2.16.2`), so every release that touches the card
+  automatically forces a fresh fetch. If you're still on 2.16.1 and the
+  clock is still showing the wrong time, this is why — update to 2.16.2.
+
 ## 2.16.1
 
 - Fixed the timetable card's header clock: it now always shows the

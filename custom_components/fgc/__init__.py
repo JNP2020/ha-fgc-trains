@@ -17,6 +17,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.loader import async_get_integration
 
 from .alerts_coordinator import AlertsCoordinator
 from .api import FgcApiClient, FgcApiError, FgcAuthError
@@ -269,7 +270,17 @@ async def _async_register_frontend_resources(hass: HomeAssistant) -> None:
             )
         except ImportError:
             hass.http.register_static_path(FRONTEND_URL_BASE, www_dir, False)
-        add_extra_js_url(hass, f"{FRONTEND_URL_BASE}/{CARD_JS_FILENAME}")
+        # Cache-bust with the integration's own version: without this, the
+        # card is always registered at the exact same URL, so browsers (and
+        # the frontend's own module cache) keep serving whatever copy of
+        # fgc-timetable-card.js they first loaded, even after this
+        # integration is updated and Home Assistant restarted. Bumping
+        # manifest.json's version on every release that touches the card
+        # (already our convention) now also forces every dashboard to fetch
+        # the new file instead of a stale cached one.
+        integration = await async_get_integration(hass, DOMAIN)
+        card_url = f"{FRONTEND_URL_BASE}/{CARD_JS_FILENAME}?v={integration.version}"
+        add_extra_js_url(hass, card_url)
         hass.data.setdefault(DOMAIN, {})["_frontend_registered"] = True
     except Exception:  # noqa: BLE001 - never let a card-serving hiccup break setup
         _LOGGER.warning(
