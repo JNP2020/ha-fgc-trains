@@ -3,6 +3,8 @@
 [![Hassfest](https://github.com/JNP2020/ha-fgc-trains/actions/workflows/hassfest.yaml/badge.svg)](https://github.com/JNP2020/ha-fgc-trains/actions/workflows/hassfest.yaml)
 [![HACS validation](https://github.com/JNP2020/ha-fgc-trains/actions/workflows/hacs.yaml/badge.svg)](https://github.com/JNP2020/ha-fgc-trains/actions/workflows/hacs.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
+
 
 <img src="custom_components/fgc/logo.png" alt="FGC logo" width="180">
 
@@ -36,7 +38,8 @@ portal.
 
 ### HACS (recommended)
 
-[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
+This integration is available in the default HACS store.
+
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=JNP2020&repository=ha-fgc-trains&category=integration)
 
 ### Manual
