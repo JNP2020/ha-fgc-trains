@@ -36,9 +36,8 @@ portal.
 
 ### HACS (recommended)
 
-1. HACS -> the three-dot menu (top right) -> **Custom repositories**.
-2. Add this repository's URL, category **Integration**.
-3. Install "FGC Trains" from HACS, then restart Home Assistant.
+[![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=JNP2020&repository=ha-fgc-trains&category=integration)
 
 ### Manual
 
