@@ -38,9 +38,17 @@ portal.
 
 ### HACS (recommended)
 
-This integration is available in the default HACS store.
+FGC Trains is part of the [HACS](https://hacs.xyz/) **default store** — search
+for "FGC Trains" in HACS and install it like any other integration. Nothing to
+add as a custom repository.
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=JNP2020&repository=ha-fgc-trains&category=integration)
+
+Or manually in Home Assistant: **HACS -> Integrations -> search "FGC Trains" ->
+Download**, then restart Home Assistant. On HACS versions that cache the store
+list, it may take a while (or a *HACS -> Update* / Home Assistant restart) for
+the integration to show up — it was added to the store on 2026-10-18
+([hacs/default#9047](https://github.com/hacs/default/pull/9047)).
 
 ### Manual
 
@@ -238,5 +246,5 @@ see `custom_components/fgc/fonts/LICENSE.txt`).
 
 ## License
 
-[MIT](LICENSE). Not currently listed in the HACS default store — install
-it as a HACS custom repository (see Install above).
+[MIT](LICENSE). Listed in the HACS default store since 2026-10-18
+([hacs/default#9047](https://github.com/hacs/default/pull/9047)).
