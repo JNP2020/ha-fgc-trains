@@ -4,6 +4,19 @@ All notable changes to this integration are documented here. Versions
 match `custom_components/fgc/manifest.json`. For the full history before
 2.14.0, see `git log`.
 
+## 2.16.3
+
+- Documentation only — no code changes.
+- README now reflects that FGC Trains is listed in the HACS **default
+  store** (accepted 2026-10-18, [hacs/default#9047](https://github.com/hacs/default/pull/9047)):
+  the install section describes searching for "FGC Trains" in HACS instead
+  of adding a custom repository, and the stale "not currently listed in the
+  HACS default store" line at the end of the README is gone.
+- Released separately rather than as a bare README commit because HACS
+  renders a repository's README from the Git ref it is installed from (the
+  release tag), so README fixes only become visible in HACS once a new
+  release carries them.
+
 ## 2.16.2
 
 - Fixed a real bug in the 2.16.1 timezone fix: the timetable card's JS
