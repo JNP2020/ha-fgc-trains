@@ -3,25 +3,36 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import voluptuous as vol
 from homeassistant.components.frontend import add_extra_js_url
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.loader import async_get_integration
+from homeassistant.util import dt as dt_util
 
 from .alerts_coordinator import AlertsCoordinator
 from .api import FgcApiClient, FgcApiError, FgcAuthError
 from .const import (
+    ATTR_DESTINATION,
+    ATTR_LIMIT,
+    ATTR_STATION,
     CARD_JS_FILENAME,
     CONF_API_KEY,
     CONF_ENABLE_AIR_QUALITY,
@@ -48,7 +59,27 @@ from .vehicle_coordinator import FgcVehicleCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.SENSOR, Platform.DEVICE_TRACKER, Platform.CAMERA]
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.DEVICE_TRACKER,
+    Platform.CAMERA,
+]
+
+# What `entry.runtime_data` holds: "coordinator", "client", "stations" plus
+# one key per optional feature (see _OPTIONAL_FEATURES), None when disabled.
+type FgcConfigEntry = ConfigEntry[dict[str, Any]]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+SERVICE_GET_DEPARTURES = "get_departures"
+SERVICE_GET_DEPARTURES_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_STATION): cv.string,
+        vol.Optional(ATTR_DESTINATION): cv.string,
+        vol.Optional(ATTR_LIMIT, default=5): vol.All(vol.Coerce(int), vol.Range(min=1, max=20)),
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -61,7 +92,7 @@ class _OptionalFeature:
     feature is added — adding one is now a single new entry here.
 
     `data_key` is the key this feature's coordinator is stored under in
-    `hass.data[DOMAIN][entry.entry_id]` (also used as its log name, with
+    `entry.runtime_data` (also used as its log name, with
     underscores turned to spaces).
     """
 
@@ -128,7 +159,78 @@ _OPTIONAL_FEATURES: tuple[_OptionalFeature, ...] = (
 )
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the integration-level `fgc.get_departures` action."""
+
+    async def _handle_get_departures(call: ServiceCall) -> dict[str, Any]:
+        return _get_departures(hass, call.data)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_DEPARTURES,
+        _handle_get_departures,
+        schema=SERVICE_GET_DEPARTURES_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    return True
+
+
+def _get_departures(hass: HomeAssistant, data: Mapping[str, Any]) -> dict[str, Any]:
+    """Answer `fgc.get_departures` from the coordinators' already-fetched data.
+
+    No extra API calls: this reads the same cached, realtime-corrected list
+    the departure sensors use, merged across destinations. `station` may be
+    a station code ("PC") or its name, `destination` is a case-insensitive
+    substring of the destination name.
+    """
+    wanted = data[ATTR_STATION].strip().casefold()
+    destination_filter = (data.get(ATTR_DESTINATION) or "").strip().casefold()
+    limit = data[ATTR_LIMIT]
+    now = dt_util.now()
+
+    known: list[str] = []
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state is not ConfigEntryState.LOADED:
+            continue
+        coordinator: FgcCoordinator = entry.runtime_data["coordinator"]
+        stations = entry.runtime_data["stations"]
+        for code in coordinator.station_codes:
+            name = stations.get(code, {}).get("name", code)
+            known.append(f"{name} ({code})")
+            if wanted not in (code.casefold(), name.casefold()):
+                continue
+            departures = [
+                dep
+                for dep in coordinator.get_board(code)
+                if destination_filter in dep["destination"].casefold()
+            ][:limit]
+            return {
+                "station": name,
+                "station_code": code,
+                "departures": [
+                    {
+                        "line": dep["line"],
+                        "destination": dep["destination"],
+                        "platform": dep["platform"],
+                        "departure": dep["datetime"].isoformat(),
+                        "minutes": max(0, int((dep["datetime"] - now).total_seconds() // 60)),
+                        "realtime": dep["realtime"],
+                    }
+                    for dep in departures
+                ],
+            }
+
+    raise ServiceValidationError(
+        translation_domain=DOMAIN,
+        translation_key="station_not_configured",
+        translation_placeholders={
+            "station": data[ATTR_STATION],
+            "configured": ", ".join(sorted(known)) or "-",
+        },
+    )
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: FgcConfigEntry) -> bool:
     """Set up FGC Trains from a config entry."""
     await _async_register_frontend_resources(hass)
 
@@ -174,8 +276,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     )
 
-    hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {
+    entry.runtime_data = {
         "coordinator": coordinator,
         "client": client,
         "stations": stations,
@@ -339,11 +440,14 @@ def _remove_stale_entities(
 
     registry = er.async_get(hass)
     station_codes = entry.options.get(CONF_STATIONS, [])
-    wanted_sensor_ids = {
-        f"{entry.entry_id}_{code}_{slugify(destination)}"
-        for code, destinations in coordinator.destinations.items()
-        for destination in destinations
-    }
+    # Departure sensors are kept for as long as their *station* is
+    # configured, whatever today's timetable happens to contain: a
+    # destination that's only served on weekdays (or during a works
+    # diversion) is absent from the weekend schedule, and deleting its
+    # sensor then would lose its history and break dashboards/automations
+    # that reference it. Only removing the station removes its sensors.
+    departure_prefixes = tuple(f"{entry.entry_id}_{code}_" for code in station_codes)
+    wanted_sensor_ids: set[str] = set()
     ski_prefix = f"{entry.entry_id}_ski_"
     ski_data_trustworthy = ski_coordinator is not None and ski_coordinator.last_update_success
     if ski_data_trustworthy:
@@ -379,9 +483,11 @@ def _remove_stale_entities(
                 continue
             if unique_id.startswith(ski_parking_prefix) and not ski_parking_data_trustworthy:
                 continue
+            if unique_id.startswith(departure_prefixes):
+                continue
             if unique_id not in wanted_sensor_ids:
                 registry.async_remove(entity_entry.entity_id)
-        elif entity_entry.domain == "device_tracker" and not map_enabled:
+        elif entity_entry.domain == "binary_sensor" and not alerts_enabled or entity_entry.domain == "device_tracker" and not map_enabled:
             registry.async_remove(entity_entry.entity_id)
         elif entity_entry.domain == "camera":
             if unique_id.startswith(board_prefix):
@@ -391,14 +497,13 @@ def _remove_stale_entities(
                 registry.async_remove(entity_entry.entity_id)
 
 
-async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_update_listener(hass: HomeAssistant, entry: FgcConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: FgcConfigEntry) -> bool:
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
         ir.async_delete_issue(hass, DOMAIN, f"{entry.entry_id}_low_api_quota")
     return unload_ok

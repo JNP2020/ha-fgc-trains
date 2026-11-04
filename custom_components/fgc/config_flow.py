@@ -144,6 +144,32 @@ class FgcConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="reauth_confirm", data_schema=schema, errors=errors
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Change the API key from the integration's three-dot menu
+        (Reconfigure), without touching stations or settings."""
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            api_key = user_input.get(CONF_API_KEY) or None
+            error = await _async_validate_api_key(self.hass, api_key)
+            if error:
+                errors["base"] = error
+            else:
+                # The entry's update listener reloads the integration.
+                self.hass.config_entries.async_update_entry(
+                    entry, data={**entry.data, CONF_API_KEY: api_key}
+                )
+                return self.async_abort(reason="reconfigure_successful")
+
+        schema = vol.Schema(
+            {vol.Optional(CONF_API_KEY, default=entry.data.get(CONF_API_KEY) or ""): str}
+        )
+        return self.async_show_form(
+            step_id="reconfigure", data_schema=schema, errors=errors
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> FgcOptionsFlow:
@@ -276,9 +302,8 @@ class FgcOptionsFlow(OptionsFlow):
                 title="", data={**self.config_entry.options, CONF_STATIONS: updated}
             )
 
-        stations = self.hass.data.get(DOMAIN, {}).get(
-            self.config_entry.entry_id, {}
-        ).get("stations", {})
+        runtime_data = getattr(self.config_entry, "runtime_data", None) or {}
+        stations = runtime_data.get("stations", {})
         options = [
             SelectOptionDict(value=code, label=stations.get(code, {}).get("name", code))
             for code in current

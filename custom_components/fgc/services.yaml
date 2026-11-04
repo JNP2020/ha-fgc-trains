@@ -1,0 +1,20 @@
+get_departures:
+  fields:
+    station:
+      required: true
+      example: "Sant Cugat Centre"
+      selector:
+        text:
+    destination:
+      required: false
+      example: "Terrassa"
+      selector:
+        text:
+    limit:
+      required: false
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 20
+          mode: box
