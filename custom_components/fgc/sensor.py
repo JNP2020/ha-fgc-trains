@@ -1,7 +1,9 @@
 """Sensor platform for FGC Trains."""
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity
+from typing import TYPE_CHECKING
+
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -15,6 +17,9 @@ try:  # UnitOfTime.MINUTES landed in newer HA cores; fall back for older ones.
     _MINUTES = UnitOfTime.MINUTES
 except ImportError:  # pragma: no cover
     _MINUTES = "min"
+
+if TYPE_CHECKING:
+    from . import FgcConfigEntry
 
 from .alerts_sensor import ServiceAlertsSensor
 from .const import (
@@ -40,7 +45,7 @@ from .util import slugify
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: FgcConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up one sensor per destination for each configured station, plus
     the optional ski/air-quality/parking/carbon-footprint sensors for
@@ -53,18 +58,20 @@ async def async_setup_entry(
     refresh by the time this runs, so `destinations` is populated for every
     configured station.
     """
-    data = hass.data[DOMAIN][entry.entry_id]
+    data = entry.runtime_data
     coordinator: FgcCoordinator = data["coordinator"]
     stations: dict[str, dict] = data["stations"]
 
-    entities = []
-    for code in entry.options.get(CONF_STATIONS, []):
-        station_name = stations.get(code, {}).get("name", code)
-        destinations = coordinator.destinations.get(code, [])
-        single_destination = len(destinations) <= 1
-        for destination in destinations:
-            entities.append(
-                FgcDepartureSensor(
+    def _departure_entities() -> list[SensorEntity]:
+        """A minutes sensor and a next-departure timestamp sensor for every
+        destination currently known at every configured station."""
+        found: list[SensorEntity] = []
+        for code in entry.options.get(CONF_STATIONS, []):
+            station_name = stations.get(code, {}).get("name", code)
+            destinations = coordinator.destinations.get(code, [])
+            single_destination = len(destinations) <= 1
+            for destination in destinations:
+                args = (
                     coordinator,
                     entry,
                     code,
@@ -72,7 +79,11 @@ async def async_setup_entry(
                     station_name,
                     None if single_destination else destination,
                 )
-            )
+                found.append(FgcDepartureSensor(*args))
+                found.append(FgcNextDepartureSensor(*args))
+        return found
+
+    entities: list[SensorEntity] = _departure_entities()
 
     alerts_coordinator = data.get("alerts_coordinator")
     if alerts_coordinator is not None:
@@ -114,6 +125,14 @@ async def async_setup_entry(
         if new_entities:
             known_optional_ids.update(entity.unique_id for entity in new_entities)
             async_add_entities(new_entities)
+
+    # A destination can show up after startup (a branch that only runs at
+    # weekends, a works diversion, ...): give it its sensors when it does.
+    @callback
+    def _add_departure_entities() -> None:
+        _add_optional(_departure_entities())
+
+    entry.async_on_unload(coordinator.async_add_listener(_add_departure_entities))
 
     if ski_coordinator is not None:
 
@@ -261,4 +280,49 @@ class FgcDepartureSensor(CoordinatorEntity[FgcCoordinator], SensorEntity):
                 ],
             }
         )
+        return attrs
+
+
+class FgcNextDepartureSensor(FgcDepartureSensor):
+    """When the next train to one destination leaves, as a timestamp.
+
+    Same data as the minutes sensor, but a real `timestamp` is what
+    automations and templates want ("notify me 10 minutes before") and what
+    the UI renders as a relative time. It has a separate unique id, so it
+    sits alongside the original sensor without touching it.
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_native_unit_of_measurement = None
+    _attr_icon = "mdi:train-variant"
+
+    def __init__(
+        self,
+        coordinator: FgcCoordinator,
+        entry: ConfigEntry,
+        station_code: str,
+        destination: str,
+        station_name: str,
+        direction_label: str | None,
+    ) -> None:
+        super().__init__(
+            coordinator, entry, station_code, destination, station_name, direction_label
+        )
+        self._attr_name = f"{self._attr_name} next departure"
+        self._attr_unique_id = f"{self._attr_unique_id}_next_departure"
+
+    @property
+    def native_value(self):
+        upcoming = self._upcoming
+        return upcoming[0]["datetime"] if upcoming else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs = {
+            ATTR_STATION_NAME: self._station_name,
+            ATTR_STATION_CODE: self._station_code,
+        }
+        upcoming = self._upcoming
+        if upcoming:
+            attrs[ATTR_REALTIME] = upcoming[0]["realtime"]
         return attrs

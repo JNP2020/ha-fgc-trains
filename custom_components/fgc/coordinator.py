@@ -33,6 +33,7 @@ every 30 seconds until service is about to resume.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, timedelta
 from typing import Any, TypedDict
@@ -42,7 +43,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import FgcApiClient, FgcApiError, FgcAuthError, StationInfo
+from .api import FgcApiClient, FgcApiError, FgcAuthError, RealtimePrediction, StationInfo
 from .const import (
     DOMAIN,
     QUIET_HOURS_RESUME_BUFFER,
@@ -57,6 +58,16 @@ _LOGGER = logging.getLogger(__name__)
 # the day-rollover check catches those without materially affecting API
 # usage (a handful of extra requests per station per day).
 _CACHE_MAX_AGE = timedelta(hours=3)
+
+# If a refresh of an already-cached (same-day) schedule fails, keep serving
+# the cache and try again after this long instead of on every 30s tick.
+_REFRESH_RETRY_DELAY = timedelta(minutes=5)
+
+
+def _as_prediction(raw: float | RealtimePrediction) -> RealtimePrediction:
+    """Accept a bare epoch (the original index format) as well as a full
+    `RealtimePrediction`, so older callers and tests keep working."""
+    return raw if isinstance(raw, RealtimePrediction) else RealtimePrediction(raw)
 
 
 class Departure(TypedDict):
@@ -123,7 +134,9 @@ def _parse_departures(rows: list[dict[str, Any]], today: date) -> list[Departure
 
 
 def _apply_realtime(
-    departures: list[Departure], realtime_index: dict[str, list[int]], tz
+    departures: list[Departure],
+    realtime_index: dict[str, list[float | RealtimePrediction]],
+    tz,
 ) -> list[Departure]:
     """Overlay live GTFS-RT predicted departure times where a confident match
     exists, leaving everything else on its static scheduled time.
@@ -141,44 +154,65 @@ def _apply_realtime(
     duplicate/phantom train alongside the (wrongly) realtime-adjusted one.
     Matching by best-delta-first instead, and each side used at most once,
     avoids that.
+
+    When the feed tells us which route a prediction belongs to, a pairing
+    whose route agrees with the departure's line is preferred over a closer
+    one that doesn't — that keeps two different lines calling at the same
+    platform within a few minutes of each other from swapping predictions.
+    It's only a preference, never a hard filter: if the feed's route ids
+    don't line up with the timetable's line names, every pairing counts as
+    a mismatch equally and the order falls back to pure time distance.
+
+    A prediction flagged as cancelled (cancelled trip or skipped stop) that
+    matches a departure removes that departure from the result rather than
+    leaving a train on the board that isn't going to run.
     """
     max_delta = REALTIME_MATCH_MAX_DELTA.total_seconds()
 
     # Every (departure, prediction) pair at the same stop_id within the
     # delta window, best matches first.
-    pairs: list[tuple[float, int, int]] = []  # (delta, dep_idx, epoch_idx)
-    epochs_by_stop: dict[str, list[int]] = {}
+    pairs: list[tuple[int, float, int, int]] = []  # (route_mismatch, delta, dep_idx, pred_idx)
+    predictions_by_stop: dict[str, list[RealtimePrediction]] = {}
     for dep_idx, dep in enumerate(departures):
-        epochs = realtime_index.get(dep["stop_id"])
-        if not epochs:
+        raw_predictions = realtime_index.get(dep["stop_id"])
+        if not raw_predictions:
             continue
-        epochs_by_stop.setdefault(dep["stop_id"], epochs)
+        predictions = predictions_by_stop.setdefault(
+            dep["stop_id"], [_as_prediction(raw) for raw in raw_predictions]
+        )
         scheduled_epoch = dep["datetime"].timestamp()
-        for epoch_idx, epoch in enumerate(epochs):
-            delta = abs(epoch - scheduled_epoch)
+        for pred_idx, prediction in enumerate(predictions):
+            delta = abs(prediction.epoch - scheduled_epoch)
             if delta <= max_delta:
-                pairs.append((delta, dep_idx, epoch_idx))
-    pairs.sort(key=lambda p: p[0])
+                route_mismatch = int(
+                    bool(prediction.route_id)
+                    and bool(dep["line"])
+                    and prediction.route_id != dep["line"]
+                )
+                pairs.append((route_mismatch, delta, dep_idx, pred_idx))
+    pairs.sort(key=lambda p: (p[0], p[1]))
 
-    matched_epoch: dict[int, int] = {}  # dep_idx -> chosen epoch
-    used_epochs: dict[str, set[int]] = {}  # stop_id -> set of consumed epoch_idx
-    for _delta, dep_idx, epoch_idx in pairs:
-        if dep_idx in matched_epoch:
+    matched: dict[int, RealtimePrediction] = {}  # dep_idx -> chosen prediction
+    used: dict[str, set[int]] = {}  # stop_id -> set of consumed pred_idx
+    for _mismatch, _delta, dep_idx, pred_idx in pairs:
+        if dep_idx in matched:
             continue
         stop_id = departures[dep_idx]["stop_id"]
-        used = used_epochs.setdefault(stop_id, set())
-        if epoch_idx in used:
+        consumed = used.setdefault(stop_id, set())
+        if pred_idx in consumed:
             continue
-        used.add(epoch_idx)
-        matched_epoch[dep_idx] = epochs_by_stop[stop_id][epoch_idx]
+        consumed.add(pred_idx)
+        matched[dep_idx] = predictions_by_stop[stop_id][pred_idx]
 
     adjusted: list[Departure] = []
     for dep_idx, dep in enumerate(departures):
-        epoch = matched_epoch.get(dep_idx)
-        if epoch is not None:
+        prediction = matched.get(dep_idx)
+        if prediction is not None:
+            if prediction.canceled:
+                continue
             dep = {
                 **dep,
-                "datetime": datetime.fromtimestamp(epoch, tz=tz),
+                "datetime": datetime.fromtimestamp(prediction.epoch, tz=tz),
                 "realtime": True,
             }
         adjusted.append(dep)
@@ -213,6 +247,29 @@ def _dedupe_departures(departures: list[Departure]) -> list[Departure]:
     return kept
 
 
+def _carry_over_after_midnight(
+    previous: list[Departure], fresh: list[Departure], now: datetime
+) -> list[Departure]:
+    """Keep yesterday's still-upcoming departures when a new day's schedule loads.
+
+    GTFS lists the small hours as "24:xx" of the *previous* service day, so
+    right after midnight yesterday's cached list can still hold trains that
+    haven't left yet. Replacing the cache wholesale would drop them if the
+    new day's dataset doesn't repeat them; exact duplicates are skipped so
+    it doesn't double-list the ones it does.
+    """
+    seen = {
+        (dep["datetime"], dep["stop_id"], dep["line"], dep["destination"]) for dep in fresh
+    }
+    carried = [
+        dep
+        for dep in previous
+        if dep["datetime"] >= now
+        and (dep["datetime"], dep["stop_id"], dep["line"], dep["destination"]) not in seen
+    ]
+    return sorted([*fresh, *carried], key=lambda dep: dep["datetime"])
+
+
 class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]]):
     """Coordinator that keeps a rolling per-destination list of upcoming departures.
 
@@ -243,40 +300,27 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
 
         # Refresh any stale per-station schedule cache first: besides being
         # needed below, this is also what `is_quiet` relies on to know when
-        # the next service day's first departure is.
-        for code in self.station_codes:
-            cached = self._schedules.get(code)
-            is_stale = (
-                cached is None
-                or cached["day"] != today
-                or now - cached["fetched_at"] > _CACHE_MAX_AGE
+        # the next service day's first departure is. Stations are fetched
+        # concurrently - at midnight (or after a restart) every configured
+        # station is stale at once, and they're independent requests.
+        stale = [
+            code
+            for code in self.station_codes
+            if (cached := self._schedules.get(code)) is None
+            or cached["day"] != today
+            or now - cached["fetched_at"] > _CACHE_MAX_AGE
+        ]
+        if stale:
+            await asyncio.gather(
+                *(self._async_refresh_schedule(code, now, today) for code in stale)
             )
-            if is_stale:
-                stop_ids = self._stations.get(code, {}).get("stop_ids", [code])
-                try:
-                    rows = await self._client.async_get_day_schedule(stop_ids)
-                except FgcAuthError as err:
-                    raise ConfigEntryAuthFailed("Invalid FGC API key") from err
-                except FgcApiError as err:
-                    raise UpdateFailed(
-                        f"Error fetching FGC schedule for station {code}: {err}"
-                    ) from err
-                departures = _parse_departures(rows, today)
-                cached = _CachedSchedule(
-                    day=today,
-                    fetched_at=now,
-                    departures=departures,
-                    destinations=sorted({dep["destination"] for dep in departures}),
-                )
-                self._schedules[code] = cached
-                self.destinations[code] = cached["destinations"]
 
         # The realtime feed is fleet-wide and has nothing useful to say
         # while no configured station has a departure due soon, so it's
         # skipped during that gap rather than polled every tick for
         # nothing — see `is_quiet`.
         if self.is_quiet(now):
-            realtime_index: dict[str, list[int]] = {}
+            realtime_index: dict[str, list[float | RealtimePrediction]] = {}
         else:
             try:
                 realtime_index = await self._client.async_get_realtime_departures()
@@ -311,6 +355,52 @@ class FgcCoordinator(DataUpdateCoordinator[dict[str, dict[str, list[Departure]]]
             }
 
         return result
+
+    async def _async_refresh_schedule(self, code: str, now: datetime, today: date) -> None:
+        """(Re)fetch one station's schedule for today into the cache.
+
+        If the fetch fails but we already hold today's schedule, keep serving
+        it and retry in a few minutes: the timetable is static, so a short
+        API hiccup shouldn't turn every departure sensor "unavailable". Only
+        when there is nothing usable (first load, or the cache is from a
+        previous day) does the failure propagate.
+        """
+        previous = self._schedules.get(code)
+        stop_ids = self._stations.get(code, {}).get("stop_ids", [code])
+        try:
+            rows = await self._client.async_get_day_schedule(stop_ids)
+        except FgcAuthError as err:
+            raise ConfigEntryAuthFailed("Invalid FGC API key") from err
+        except FgcApiError as err:
+            if previous is not None and previous["day"] == today:
+                _LOGGER.warning(
+                    "Could not refresh the FGC schedule for station %s (%s); "
+                    "keeping the cached one and retrying in %d minutes",
+                    code,
+                    err,
+                    _REFRESH_RETRY_DELAY.total_seconds() // 60,
+                )
+                previous["fetched_at"] = now - _CACHE_MAX_AGE + _REFRESH_RETRY_DELAY
+                return
+            raise UpdateFailed(
+                f"Error fetching FGC schedule for station {code}: {err}"
+            ) from err
+
+        departures = _parse_departures(rows, today)
+        if previous is not None and previous["day"] != today:
+            departures = _carry_over_after_midnight(previous["departures"], departures, now)
+        self._schedules[code] = _CachedSchedule(
+            day=today,
+            fetched_at=now,
+            departures=departures,
+            destinations=sorted({dep["destination"] for dep in departures}),
+        )
+        # Remember every destination seen since startup, not just today's:
+        # a branch that only runs on weekdays still keeps its sensor (it
+        # just reads "unknown" on a day with no service) instead of the
+        # entity coming and going with the timetable.
+        known = self.destinations.setdefault(code, [])
+        known[:] = sorted(set(known) | set(self._schedules[code]["destinations"]))
 
     def is_quiet(self, now: datetime) -> bool:
         """Whether `now` falls in a known service gap — before any

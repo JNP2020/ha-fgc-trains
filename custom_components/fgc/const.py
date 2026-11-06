@@ -56,6 +56,8 @@ ATTR_STATION_NAME = "station_name"
 ATTR_STATION_CODE = "station_code"
 ATTR_NEXT_DEPARTURE = "next_departure"
 ATTR_UPCOMING = "upcoming"
+ATTR_STATION = "station"
+ATTR_LIMIT = "limit"
 ATTR_REALTIME = "realtime"
 
 ATTR_OPEN_FACILITIES = "open_facilities"

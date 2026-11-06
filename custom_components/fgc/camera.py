@@ -10,6 +10,7 @@ from data already being fetched).
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import aiohttp
 from homeassistant.components.camera import Camera
@@ -19,6 +20,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+if TYPE_CHECKING:
+    from . import FgcConfigEntry
 
 from .board_camera import FgcBoardCamera
 from .const import CONF_STATIONS, DOMAIN
@@ -34,13 +38,13 @@ _MAX_WEBCAM_BYTES = 10 * 1024 * 1024
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: FgcConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the board-image camera for every configured station, plus
     webcam cameras for every currently-known active webcam (keeping adding
     new webcams as they appear). Webcams are skipped entirely if that
     feature is off (`webcam_coordinator` is None in that case)."""
-    data = hass.data[DOMAIN][entry.entry_id]
+    data = entry.runtime_data
 
     coordinator = data["coordinator"]
     stations = data["stations"]

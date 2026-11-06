@@ -21,6 +21,13 @@
         "data": {
           "api_key": "Clau API (opcional)"
         }
+      },
+      "reconfigure": {
+        "title": "Actualitza la clau API d'FGC",
+        "description": "Substitueix la clau API de dades obertes d'FGC que fa servir aquesta integració. Deixa-ho en blanc per passar a l'accés anònim. Les teves estacions i ajustos es conserven.",
+        "data": {
+          "api_key": "Clau API (opcional)"
+        }
       }
     },
     "error": {
@@ -29,7 +36,8 @@
     },
     "abort": {
       "already_configured": "FGC Trens ja està configurat. Afegeix o elimina estacions des de les seves opcions de Configurar.",
-      "reauth_successful": "Reconnexió correcta."
+      "reauth_successful": "Reconnexió correcta.",
+      "reconfigure_successful": "Clau API actualitzada."
     }
   },
   "options": {
@@ -82,6 +90,31 @@
       "cannot_connect": "No s'ha pogut connectar amb l'API de dades obertes d'FGC.",
       "no_stations_available": "Totes les estacions ja estan sent monitorades.",
       "no_stations_configured": "Actualment no hi ha cap estació configurada."
+    }
+  },
+  "exceptions": {
+    "station_not_configured": {
+      "message": "\"{station}\" no és cap de les estacions d'FGC configurades. Estacions configurades: {configured}."
+    }
+  },
+  "services": {
+    "get_departures": {
+      "name": "Obtén les sortides",
+      "description": "Retorna les properes sortides d'una de les estacions configurades, a partir de les dades que ja tenen els sensors de sortida (sense peticions addicionals a l'API).",
+      "fields": {
+        "station": {
+          "name": "Estació",
+          "description": "Nom o codi de l'estació, p. ex. \"Sant Cugat Centre\" o \"SC\"."
+        },
+        "destination": {
+          "name": "Destinació",
+          "description": "Només mostra els trens amb una destinació que contingui aquest text, p. ex. \"Terrassa\"."
+        },
+        "limit": {
+          "name": "Límit",
+          "description": "Nombre màxim de sortides a retornar."
+        }
+      }
     }
   }
 }

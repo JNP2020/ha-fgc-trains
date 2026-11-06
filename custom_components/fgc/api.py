@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import re
 import urllib.parse
-from typing import Any, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 import aiohttp
 from google.transit import gtfs_realtime_pb2
@@ -25,6 +25,20 @@ from .const import (
     DATASET_TRIP_UPDATES,
     DATASET_VEHICLE_POSITIONS,
 )
+
+
+class RealtimePrediction(NamedTuple):
+    """One stop-time update from the GTFS-RT Trip Updates feed.
+
+    `route_id` is whatever the feed reports for the trip (may be empty) and
+    is only used as a tie-breaker when matching, see `_apply_realtime`.
+    `canceled` is set for a cancelled trip or a skipped stop.
+    """
+
+    epoch: float
+    route_id: str | None = None
+    canceled: bool = False
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -276,9 +290,10 @@ class FgcApiClient:
         """Return every webcam entry (active or not) for the ski resorts."""
         return await self._get_all_pages(DATASET_SKI_WEBCAMS, {})
 
-    async def async_get_realtime_departures(self) -> dict[str, list[int]]:
-        """Return stop_id -> a list of live-predicted departure times (Unix
-        epoch seconds), from the GTFS-Realtime Trip Updates feed.
+    async def async_get_realtime_departures(self) -> dict[str, list[RealtimePrediction]]:
+        """Return stop_id -> the live-predicted departures at that stop (Unix
+        epoch seconds plus route and cancellation info), from the
+        GTFS-Realtime Trip Updates feed.
 
         Unlike the other datasets, this one is a binary protobuf file rather
         than a JSON records endpoint: first look up its current download
@@ -323,17 +338,7 @@ class FgcApiClient:
         except Exception as err:  # noqa: BLE001 - protobuf raises plain Exception/DecodeError
             raise FgcApiError(f"Could not parse GTFS-RT trip updates: {err}") from err
 
-        by_stop: dict[str, list[int]] = {}
-        for entity in feed.entity:
-            if not entity.HasField("trip_update"):
-                continue
-            for stop_time_update in entity.trip_update.stop_time_update:
-                if not stop_time_update.HasField("departure"):
-                    continue
-                epoch = stop_time_update.departure.time
-                if epoch:
-                    by_stop.setdefault(stop_time_update.stop_id, []).append(epoch)
-        return by_stop
+        return _parse_trip_updates(feed)
 
     async def async_get_air_quality(self) -> list[dict[str, Any]]:
         """Return the latest air-quality reading near every FGC train station."""
@@ -351,3 +356,39 @@ class FgcApiClient:
         """Return every currently-published FGC train service alert
         (network/line-wide disruptions, planned works, etc.)."""
         return await self._get_all_pages(DATASET_ALERTS, {})
+
+
+def _parse_trip_updates(feed: Any) -> dict[str, list[RealtimePrediction]]:
+    """Flatten a parsed Trip Updates feed into per-stop predictions.
+
+    A stop update normally carries a predicted `departure.time`. For a
+    cancelled trip, or a stop the train will skip, the feed may only give an
+    arrival time (or none), so for those the arrival time is used as a
+    fallback - it's only needed to work out *which* scheduled departure to
+    take off the board. Updates with no usable time (e.g. delay-only ones,
+    which can't be tied to a scheduled departure without a trip id) are
+    ignored, exactly as before.
+    """
+    by_stop: dict[str, list[RealtimePrediction]] = {}
+    for entity in feed.entity:
+        if not entity.HasField("trip_update"):
+            continue
+        trip_update = entity.trip_update
+        trip_canceled = (
+            trip_update.trip.schedule_relationship
+            == gtfs_realtime_pb2.TripDescriptor.CANCELED
+        )
+        route_id = trip_update.trip.route_id or None
+        for stu in trip_update.stop_time_update:
+            canceled = trip_canceled or (
+                stu.schedule_relationship
+                == gtfs_realtime_pb2.TripUpdate.StopTimeUpdate.SKIPPED
+            )
+            epoch = stu.departure.time if stu.HasField("departure") else 0
+            if not epoch and canceled and stu.HasField("arrival"):
+                epoch = stu.arrival.time
+            if epoch:
+                by_stop.setdefault(stu.stop_id, []).append(
+                    RealtimePrediction(epoch, route_id, canceled)
+                )
+    return by_stop

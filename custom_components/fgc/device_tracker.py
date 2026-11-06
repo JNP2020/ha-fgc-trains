@@ -12,12 +12,17 @@ since it usually reappears later the same day.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from homeassistant.components.device_tracker import SourceType, TrackerEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+if TYPE_CHECKING:
+    from . import FgcConfigEntry
 
 from .const import (
     ATTR_DESTINATION,
@@ -29,7 +34,7 @@ from .vehicle_coordinator import FgcVehicleCoordinator, VehiclePosition
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: FgcConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up device trackers for every currently-known train, and keep
     adding new ones as they appear in later coordinator refreshes.
@@ -37,9 +42,7 @@ async def async_setup_entry(
     No-op if the live map has been turned off in the integration's options
     (`vehicle_coordinator` is None in that case).
     """
-    coordinator: FgcVehicleCoordinator | None = hass.data[DOMAIN][entry.entry_id][
-        "vehicle_coordinator"
-    ]
+    coordinator: FgcVehicleCoordinator | None = entry.runtime_data["vehicle_coordinator"]
     if coordinator is None:
         return
     known_units: set[str] = set()

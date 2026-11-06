@@ -21,6 +21,13 @@
         "data": {
           "api_key": "API key (optional)"
         }
+      },
+      "reconfigure": {
+        "title": "Update the FGC API key",
+        "description": "Replace the FGC open-data API key used by this integration. Leave it blank to switch to anonymous access. Your stations and settings are kept.",
+        "data": {
+          "api_key": "API key (optional)"
+        }
       }
     },
     "error": {
@@ -29,7 +36,8 @@
     },
     "abort": {
       "already_configured": "FGC Trains is already set up. Add or remove stations from its Configure options.",
-      "reauth_successful": "Reconnected successfully."
+      "reauth_successful": "Reconnected successfully.",
+      "reconfigure_successful": "API key updated."
     }
   },
   "options": {
@@ -88,6 +96,31 @@
     "low_api_quota": {
       "title": "FGC open-data API quota running low",
       "description": "Only {remaining} of {limit} daily FGC open-data API requests remain. Once it hits 0, sensors will stop refreshing until the quota resets. Consider adding your own API key, removing some stations, or turning off the live map/ski sensors (Settings -> Devices & services -> FGC Trains -> Configure -> Settings) to reduce usage."
+    }
+  },
+  "exceptions": {
+    "station_not_configured": {
+      "message": "\"{station}\" is not one of the configured FGC stations. Configured stations: {configured}."
+    }
+  },
+  "services": {
+    "get_departures": {
+      "name": "Get departures",
+      "description": "Returns the next departures from one of your configured stations, using the data the departure sensors already hold (no extra API requests).",
+      "fields": {
+        "station": {
+          "name": "Station",
+          "description": "Station name or code, e.g. \"Sant Cugat Centre\" or \"SC\"."
+        },
+        "destination": {
+          "name": "Destination",
+          "description": "Only show trains whose destination contains this text, e.g. \"Terrassa\"."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum number of departures to return."
+        }
+      }
     }
   }
 }

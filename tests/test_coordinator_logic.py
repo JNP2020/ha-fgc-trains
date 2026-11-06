@@ -12,9 +12,11 @@ from datetime import UTC, date, datetime
 
 import pytest
 
+from custom_components.fgc.api import RealtimePrediction
 from custom_components.fgc.coordinator import (
     Departure,
     _apply_realtime,
+    _carry_over_after_midnight,
     _dedupe_departures,
     _parse_departures,
 )
@@ -187,3 +189,53 @@ class TestDedupeDepartures:
         ]
         kept = _dedupe_departures(departures)
         assert len(kept) == 2
+
+
+class TestRealtimeRouteAndCancellation:
+    def test_prefers_prediction_for_the_same_line(self):
+        """Two lines call at one platform a minute apart. The closest
+        prediction belongs to the *other* line, so it must not be stolen."""
+        s1 = datetime(2026, 3, 1, 8, 15, tzinfo=UTC)
+        s2 = datetime(2026, 3, 1, 8, 16, tzinfo=UTC)
+        departures = [_dep(s1, line="S1"), _dep(s2, line="S2")]
+        index = {
+            "SC1": [
+                # Feed says S2 is running at 8:15:10 (closer to the S1 slot)...
+                RealtimePrediction(datetime(2026, 3, 1, 8, 15, 10, tzinfo=UTC).timestamp(), "S2"),
+                # ...and S1 is 3 minutes late.
+                RealtimePrediction(datetime(2026, 3, 1, 8, 18, tzinfo=UTC).timestamp(), "S1"),
+            ]
+        }
+        by_line = {d["line"]: d for d in _apply_realtime(departures, index, UTC)}
+        assert by_line["S1"]["datetime"] == datetime(2026, 3, 1, 8, 18, tzinfo=UTC)
+        assert by_line["S2"]["datetime"] == datetime(2026, 3, 1, 8, 15, 10, tzinfo=UTC)
+
+    def test_unrecognised_route_ids_fall_back_to_time_distance(self):
+        scheduled = datetime(2026, 3, 1, 8, 15, tzinfo=UTC)
+        predicted = datetime(2026, 3, 1, 8, 17, tzinfo=UTC)
+        index = {"SC1": [RealtimePrediction(predicted.timestamp(), "some-internal-id")]}
+        [adjusted] = _apply_realtime([_dep(scheduled)], index, UTC)
+        assert adjusted["realtime"] is True
+        assert adjusted["datetime"] == predicted
+
+    def test_cancelled_prediction_removes_the_departure(self):
+        scheduled = datetime(2026, 3, 1, 8, 15, tzinfo=UTC)
+        later = datetime(2026, 3, 1, 8, 45, tzinfo=UTC)
+        index = {"SC1": [RealtimePrediction(scheduled.timestamp(), "S1", canceled=True)]}
+        result = _apply_realtime([_dep(scheduled), _dep(later)], index, UTC)
+        assert [d["datetime"] for d in result] == [later]
+
+
+class TestCarryOverAfterMidnight:
+    def test_keeps_upcoming_trains_from_the_previous_day(self):
+        now = datetime(2026, 3, 2, 0, 5, tzinfo=UTC)
+        left = _dep(datetime(2026, 3, 2, 0, 1, tzinfo=UTC))
+        upcoming = _dep(datetime(2026, 3, 2, 0, 20, tzinfo=UTC))
+        fresh = _dep(datetime(2026, 3, 2, 5, 0, tzinfo=UTC))
+        result = _carry_over_after_midnight([left, upcoming], [fresh], now)
+        assert result == [upcoming, fresh]
+
+    def test_does_not_duplicate_trains_the_new_day_repeats(self):
+        now = datetime(2026, 3, 2, 0, 5, tzinfo=UTC)
+        train = _dep(datetime(2026, 3, 2, 0, 20, tzinfo=UTC))
+        assert _carry_over_after_midnight([train], [dict(train)], now) == [train]
